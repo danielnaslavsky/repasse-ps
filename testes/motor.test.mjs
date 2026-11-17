@@ -49,3 +49,7 @@ import { lerMaxPessoas } from "../js/interpretador.js";
 assert.equal(lerMaxPessoas("até quinta, no máximo 3 pessoas"), 3);
 assert.equal(interpretarLocal("Conduzir 8 entrevistas da segunda fase até quinta, no máximo 3 pessoas", e, hoje).maxPessoas, 3);
 console.log("OK2");
+const p3 = interpretarLocal("Conduzir 8 entrevistas da segunda fase até quinta, no máximo 3 pessoas", e, hoje);
+assert.equal(p3.tipoId, "tp_entrevista"); assert.equal(p3.prazo, "2026-11-19"); assert.equal(p3.quantidade, 8);
+assert.equal(lerPrazo("entrega na segunda", hoje), "2026-11-23");
+console.log("OK3");

@@ -45,7 +45,7 @@ function semAcento(s) {
 function contem(texto, termo) {
   const t = semAcento(texto.toLowerCase());
   const p = semAcento(termo.toLowerCase());
-  return new RegExp(`(^|[^a-z0-9])${p.replace(/[.*+?^${}()|[\]\\&]/g, "\\$&")}([^a-z0-9]|$)`).test(t);
+  return new RegExp(`(^|[^a-z0-9])${p.replace(/[.*+?^${}()|[\]\\&]/g, "\\$&")}s?([^a-z0-9]|$)`).test(t);
 }
 
 export function lerPrazo(texto, hoje) {
@@ -70,8 +70,10 @@ export function lerPrazo(texto, hoje) {
 
   if (/semana que vem|proxima semana/.test(t)) return somarDias(hoje, 7);
 
+  // Dia da semana só conta como prazo depois de "até", "na", "pra"... ("segunda fase" não é prazo)
   for (const [nome, alvo] of Object.entries(NOMES_DIAS)) {
-    if (contem(t, nome)) {
+    const n = semAcento(nome);
+    if (new RegExp(`(?:ate|na|no|para|pra|dia|prazo:?|ate a|ate o)\\s+${n}(?:-feira)?\\b`).test(t)) {
       const atual = deISO(hoje).getDay();
       let delta = (alvo - atual + 7) % 7;
       if (delta === 0) delta = 7;
@@ -201,7 +203,7 @@ export async function interpretar(texto, estado, hoje) {
           divisivel: t.divisivel,
         })),
       },
-      20000
+      25000
     );
     return validarRespostaIA(dados, local, estado);
   } catch (e) {

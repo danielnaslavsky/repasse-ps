@@ -83,8 +83,9 @@ node testes/api.test.cjs
 
 1. Crie um projeto na Vercel importando este repositório. Framework: **Other**. Não há comando de build.
 2. Em *Settings → Environment Variables*, crie `GEMINI_API_KEY` com a chave do Google AI Studio.
-3. Opcional: `GEMINI_MODEL` para escolher outro modelo (padrão: `gemini-flash-latest`).
+3. Opcional: `GEMINI_MODEL` para escolher outro modelo (padrão: `gemini-flash-lite-latest`).
 4. Faça um novo deploy para a variável valer.
+5. Para conferir, abra `/api/ia?diagnostico=1`: deve aparecer `"ok": true`.
 
 ## Limitações e próximos passos
 

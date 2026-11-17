@@ -2,7 +2,7 @@
 // A chave fica na variável de ambiente GEMINI_API_KEY (configurada na Vercel),
 // nunca no código nem no navegador.
 
-const MODELO_PADRAO = "gemini-flash-latest";
+const MODELO_PADRAO = "gemini-flash-lite-latest"; // rápido; troque com a variável GEMINI_MODEL
 
 function promptInterpretar({ texto, hoje, areas, tipos }) {
   return `Você organiza as tarefas da equipe que conduz o processo seletivo (PS) de uma empresa júnior.
@@ -75,6 +75,18 @@ async function chamarGemini(prompt) {
 }
 
 module.exports = async function handler(req, res) {
+  // Diagnóstico: abra /api/ia?diagnostico=1 no navegador para ver se a IA responde.
+  if (req.method === "GET" && req.query && req.query.diagnostico) {
+    const inicio = Date.now();
+    const modelo = process.env.GEMINI_MODEL || MODELO_PADRAO;
+    try {
+      await chamarGemini('Responda apenas com JSON: {"ok": true}');
+      res.status(200).json({ ok: true, chaveConfigurada: true, modelo, ms: Date.now() - inicio });
+    } catch (e) {
+      res.status(200).json({ ok: false, chaveConfigurada: !!process.env.GEMINI_API_KEY, modelo, ms: Date.now() - inicio, erro: e.message });
+    }
+    return;
+  }
   if (req.method !== "POST") {
     res.status(405).json({ erro: "Use POST" });
     return;
