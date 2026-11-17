@@ -149,8 +149,14 @@ export function validarRespostaIA(r, local, estado) {
   ok.titulo = typeof r.titulo === "string" && r.titulo.trim() ? r.titulo.trim().slice(0, 90) : local.titulo;
   ok.tipoId = estado.tipos.some((t) => t.id === r.tipoId) ? r.tipoId : local.tipoId;
   ok.area = [...estado.areas, "Geral"].includes(r.area) ? r.area : local.area;
-  ok.prazo = /^\d{4}-\d{2}-\d{2}$/.test(r.prazo || "") ? r.prazo : local.prazo;
-  ok.prazoInferido = !r.prazo;
+  // Datas: se as regras locais acharam um prazo explícito, elas mandam (conta de calendário é determinística).
+  if (!local.prazoInferido) {
+    ok.prazo = local.prazo;
+    ok.prazoInferido = false;
+  } else {
+    ok.prazo = /^\d{4}-\d{2}-\d{2}$/.test(r.prazo || "") ? r.prazo : local.prazo;
+    ok.prazoInferido = !r.prazo;
+  }
   const q = Number(r.quantidade);
   ok.quantidade = Number.isFinite(q) && q >= 1 && q <= 500 ? Math.floor(q) : local.quantidade;
   const e = Number(r.esforcoPorUnidadeH);

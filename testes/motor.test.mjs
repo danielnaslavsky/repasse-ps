@@ -53,3 +53,7 @@ const p3 = interpretarLocal("Conduzir 8 entrevistas da segunda fase até quinta,
 assert.equal(p3.tipoId, "tp_entrevista"); assert.equal(p3.prazo, "2026-11-19"); assert.equal(p3.quantidade, 8);
 assert.equal(lerPrazo("entrega na segunda", hoje), "2026-11-23");
 console.log("OK3");
+import { validarRespostaIA } from "../js/interpretador.js";
+const loc = interpretarLocal("Conduzir 8 entrevistas até quinta", e, hoje);
+assert.equal(validarRespostaIA({ prazo: "2026-11-20", tipoId: "tp_entrevista" }, loc, e).prazo, "2026-11-19");
+console.log("OK4");

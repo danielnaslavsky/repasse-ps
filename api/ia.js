@@ -4,11 +4,26 @@
 
 const MODELO_PADRAO = "gemini-flash-lite-latest"; // rápido; troque com a variável GEMINI_MODEL
 
+const DIAS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+
+// Calendário dos próximos 14 dias, para o modelo não errar a conta de "quinta", "sexta"...
+function calendario(hoje) {
+  const [a, m, d] = String(hoje).split("-").map(Number);
+  const linhas = [];
+  for (let i = 0; i < 14; i++) {
+    const dt = new Date(Date.UTC(a, m - 1, d + i));
+    linhas.push(`${dt.toISOString().slice(0, 10)} = ${DIAS[dt.getUTCDay()]}${i === 0 ? " (hoje)" : ""}`);
+  }
+  return linhas.join("\n");
+}
+
 function promptInterpretar({ texto, hoje, areas, tipos }) {
   return `Você organiza as tarefas da equipe que conduz o processo seletivo (PS) de uma empresa júnior.
 Transforme o pedido do gerente em uma tarefa estruturada.
 
-Hoje é ${hoje} (formato AAAA-MM-DD). Converta prazos relativos ("sexta", "amanhã", "semana que vem") em uma data AAAA-MM-DD a partir de hoje. Se não houver prazo, devolva prazo null.
+Hoje é ${hoje} (formato AAAA-MM-DD). Converta prazos relativos ("sexta", "amanhã", "semana que vem") em uma data AAAA-MM-DD usando este calendário (um dia da semana sem "que vem" é a próxima ocorrência):
+${calendario(hoje)}
+Se não houver prazo, devolva prazo null.
 
 Áreas possíveis: ${JSON.stringify([...areas, "Geral"])}. Use "Geral" quando a tarefa não for de uma área específica.
 Tipos de tarefa possíveis (use o id): ${JSON.stringify(tipos)}
