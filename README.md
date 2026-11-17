@@ -25,6 +25,21 @@ Num PS, a gerência distribui dezenas de tasks curtas e com prazo apertado: corr
 4. **Repassa.** Quem não pode aperta "Não consigo". A task vai automaticamente para a próxima pessoa mais bem pontuada, e o histórico registra o motivo. Quem avisa uma ausência pode repassar de uma vez todas as tasks com prazo nesse período.
 5. **Acompanha.** O painel mostra tasks atrasadas, gente acima da capacidade e a carga da semana. Um botão gera, com IA, um resumo do dia: o que está em risco e o que fazer hoje.
 
+## Cronograma, calendário e Discord
+
+O PS é organizado em **desafios por subárea** (com data de lançamento e de entrega) e **treinamentos síncronos**. A aba **Cronograma** guarda esses itens e, para cada um, sugere as tasks da equipe: preparar e conduzir o treinamento, tirar dúvidas e corrigir as entregas do desafio. Um clique em "Distribuir" abre a Nova task já preenchida.
+
+A aba **Calendário** mostra, mês a mês, os lançamentos, entregas, treinamentos e os prazos das tasks. A gerência vê tudo; cada membro vê o cronograma e só os próprios prazos.
+
+O **bot do Discord** avisa os aspirantes no canal do PS:
+
+- **Novo item** no cronograma: publica assim que é criado.
+- **Mudança** de data, horário ou local: publica o "antes" e o "agora".
+- **Cancelamento**.
+- **Cronograma completo** e **lembretes de hoje e amanhã**, por botões no painel e no cronograma.
+
+Se houver um segundo webhook, o canal da equipe recebe as novas tasks e os repasses. O bot nunca marca @everyone nem cargos.
+
 ## O motor de atribuição
 
 A decisão é determinística e explicável: a IA interpreta o pedido, mas quem escolhe as pessoas é uma regra que a gerência consegue auditar.
@@ -57,9 +72,12 @@ css/estilo.css        estilo
 js/app.js             interface (telas do gerente e do membro)
 js/motor.js           motor de atribuição (pontuação, divisão, repasse)
 js/interpretador.js   leitura do pedido: IA com regras locais de reserva
+js/calendario.js      grade do mês e itens de cada dia
+js/discord.js         mensagens para o Discord
 js/dados.js           estado, dados de demonstração e persistência
 js/datas.js           utilitários de data
 api/ia.js             função serverless que chama o Gemini
+api/discord.js        função serverless que publica no Discord
 testes/               testes automatizados
 ```
 
@@ -87,8 +105,15 @@ node testes/api.test.cjs
 4. Faça um novo deploy para a variável valer.
 5. Para conferir, abra `/api/ia?diagnostico=1`: deve aparecer `"ok": true`.
 
+### Discord
+
+1. No servidor do PS, abra as configurações do canal dos aspirantes → **Integrações** → **Webhooks** → **Novo webhook** → **Copiar URL do webhook**.
+2. Na Vercel, crie `DISCORD_WEBHOOK_ASPIRANTES` com essa URL.
+3. Opcional: `DISCORD_WEBHOOK_EQUIPE` (canal da equipe) e `DISCORD_PIN` (código que a gerência digita para publicar; recomendado num site público).
+4. Redeploy. Para conferir, abra `/api/discord`: mostra quais canais estão configurados.
+
 ## Limitações e próximos passos
 
 - Os dados ficam no navegador de cada pessoa. Para uso real pela equipe, o próximo passo é um banco compartilhado (por exemplo, Supabase) com login.
-- Avisos pelo WhatsApp hoje são uma mensagem pronta para copiar. A integração direta (WhatsApp Business API ou um bot no Discord) é o passo seguinte.
+- Os lembretes do Discord saem quando a gerência clica. Lembretes automáticos num horário fixo exigem guardar o cronograma no servidor (próximo passo junto com o banco compartilhado).
 - Os pesos do motor são fixos. Uma versão futura deixaria a gerência ajustá-los e aprenderia com as trocas manuais que ela faz.

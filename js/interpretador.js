@@ -26,16 +26,18 @@ const PALAVRAS_AREA = [
   ["Marketing", ["marketing", "mkt"]],
   ["Comercial", ["comercial", "vendas"]],
   ["Dados", ["dados", "data", "bi"]],
-  ["Projetos", ["projetos", "projeto"]],
+  ["Produto", ["produto", "product"]],
+  ["Inovação", ["inovação", "inovacao"]],
 ];
 
+// A ordem importa: "preparar o treinamento" é preparação, não condução.
 const PALAVRAS_TIPO = [
-  ["corrigir", ["corrigir", "correção", "correcao", "avaliar", "entregas", "desafio"]],
-  ["entrevista", ["entrevista", "entrevistar"]],
-  ["responder", ["responder", "resposta", "dúvidas", "duvidas", "e-mail", "email", "mensagens"]],
-  ["dinamica", ["dinâmica", "dinamica"]],
-  ["consolidar", ["consolidar", "notas", "planilha de notas", "deliberação", "deliberacao"]],
-  ["divulgacao", ["divulgar", "divulgação", "divulgacao", "post", "edital"]],
+  ["corrigir", ["corrigir", "correção", "correcao", "avaliar", "entregas", "entrega"]],
+  ["preparar", ["preparar", "preparação", "preparacao", "material", "slides"]],
+  ["conduzir", ["conduzir", "ministrar", "apresentar", "treinamento", "aula"]],
+  ["duvidas", ["dúvida", "duvida", "responder", "tirar dúvidas"]],
+  ["consolidar", ["consolidar", "notas", "deliberação", "deliberacao"]],
+  ["avisos", ["comunicar", "aviso", "avisar", "anunciar", "divulgar"]],
 ];
 
 function semAcento(s) {
@@ -85,7 +87,7 @@ export function lerPrazo(texto, hoje) {
 
 export function lerQuantidade(texto) {
   const m = texto.match(
-    /\b(\d{1,3})\s+(?:entregas?|entrevistas?|candidat[oa]s?|aspirantes?|desafios?|mensagens?|e-?mails?|d[úu]vidas?|pessoas?)/i
+    /\b(\d{1,3})\s+(?:entregas?|candidat[oa]s?|aspirantes?|desafios?|mensagens?|e-?mails?|d[úu]vidas?|perguntas?)/i
   );
   return m ? Number(m[1]) : 1;
 }

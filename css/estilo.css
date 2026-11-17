@@ -245,3 +245,51 @@ details ul { font-size: 13px; color: var(--suave); padding-left: 18px; }
 }
 .registro-item { display: grid; grid-template-columns: 130px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--linha); font-size: 14px; }
 .registro-item time { color: var(--suave); font-family: var(--mono); font-size: 12px; padding-top: 2px; }
+
+/* ---------- Cronograma ---------- */
+.evento-linha { display: grid; grid-template-columns: 90px 1fr auto; gap: 14px; align-items: start; padding: 14px 0; border-bottom: 1px solid var(--linha); }
+.evento-linha:last-child { border-bottom: 0; }
+.evento-linha.passado { opacity: 0.55; }
+.evento-quando { font-size: 13px; line-height: 1.3; }
+.evento-quando small { color: var(--suave); }
+.evento-titulo { font-weight: 600; margin: 4px 0 2px; }
+@media (max-width: 760px) { .evento-linha { grid-template-columns: 70px 1fr; } .evento-linha > .acoes { grid-column: 1 / -1; } }
+.etiqueta.ev-desafio { background: #efe7f6; color: #6a3d8f; }
+.etiqueta.ev-treinamento { background: var(--azul-claro); color: var(--azul); }
+.etiqueta.ev-aviso { background: var(--ambar-claro); color: var(--ambar); }
+.sugestoes { grid-column: 1 / -1; background: #f8f7f3; border: 1px solid var(--linha); border-radius: 8px; padding: 12px 14px; }
+.sugestao { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px dashed var(--linha); font-size: 14px; }
+.sugestao:first-of-type { border-top: 0; }
+
+/* ---------- Calendário ---------- */
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-cab { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--suave); text-align: center; padding-bottom: 4px; }
+.cal-dia {
+  min-height: 92px; background: #fff; border: 1px solid var(--linha); border-radius: 8px; padding: 6px;
+  text-align: left; display: flex; flex-direction: column; gap: 3px; cursor: pointer; overflow: hidden; font-size: 12px;
+}
+.cal-dia:hover { border-color: var(--linha-forte); }
+.cal-dia.fora { background: transparent; opacity: 0.45; }
+.cal-dia.hoje .cal-num { background: var(--tinta); color: #fff; }
+.cal-dia.sel { border-color: var(--verde); box-shadow: inset 0 0 0 1px var(--verde); }
+.cal-num { font-size: 12px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; }
+.cal-item { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; padding: 1px 5px; font-size: 11px; line-height: 1.5; background: #ecebe6; color: var(--tinta); }
+.cal-item.desafio { background: #efe7f6; color: #6a3d8f; }
+.cal-item.entrega { background: #f3dcef; color: #8a2f74; }
+.cal-item.treinamento { background: var(--azul-claro); color: var(--azul); }
+.cal-item.aviso { background: var(--ambar-claro); color: var(--ambar); }
+.cal-item.task { background: var(--verde-claro); color: var(--verde); }
+.cal-mais { font-size: 11px; color: var(--suave); padding-left: 4px; }
+.cal-legenda { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--suave); }
+.cal-legenda span { display: inline-flex; align-items: center; gap: 6px; }
+.cal-ponto { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #bbb; margin-right: 6px; vertical-align: 1px; }
+.cal-ponto.desafio { background: #8f5cb8; }
+.cal-ponto.entrega { background: #b2479a; }
+.cal-ponto.treinamento { background: var(--azul); }
+.cal-ponto.aviso { background: var(--ambar); }
+.cal-ponto.task { background: var(--verde); }
+@media (max-width: 700px) {
+  .cal-dia { min-height: 54px; padding: 3px; }
+  .cal-item { font-size: 0; height: 6px; padding: 0; }
+  .cal-mais { display: none; }
+}

@@ -1,9 +1,11 @@
 // Interface do repasse: telas do gerente e do membro.
 
-import { carregar, salvar, restaurar, registrar, novoId } from "./dados.js";
+import { carregar, salvar, restaurar, registrar, novoId, TIPOS_EVENTO } from "./dados.js";
 import { hojeISO, formatarCurto, prazoRelativo, diferencaDias, somarDias } from "./datas.js";
 import { proporDistribuicao, redistribuir, pontuar, cargaAberta, explicar } from "./motor.js";
 import { interpretar, interpretarLocal, resumirComIA } from "./interpretador.js";
+import { enviarDiscord, eventoParaDiscord, quandoEvento, resumoDatas, horaBR } from "./discord.js";
+import { gradeMes, itensDoDia, MESES } from "./calendario.js";
 
 const raiz = document.getElementById("app");
 const CHAVE_PERFIL = "ps-tasks:perfil";
@@ -29,6 +31,11 @@ const ui = {
   recusando: null,
   resumo: { texto: "", carregando: false, erro: "" },
   conflitosAusencia: [],
+  calMes: hojeISO().slice(0, 7),
+  calDia: hojeISO(),
+  evEditando: null, // id do evento, "novo" ou null
+  evSugestoes: null, // id do evento cujas tasks sugeridas estão abertas
+  enviando: false,
 };
 
 function novaVazia() {
@@ -123,6 +130,7 @@ function repassar(task, quemSaiu, motivo) {
   if (proximo) {
     atribuirTask(task, proximo.membroId, `Repassada de ${nomeSaiu} para ${primeiroNome(proximo.membroId)}${motivo ? ` (${motivo})` : ""}.`);
     registrar(estado, `"${task.titulo}": ${nomeSaiu} não pôde${motivo ? ` (${motivo})` : ""}; repassada automaticamente para ${primeiroNome(proximo.membroId)}.`);
+    avisarEquipe({ tipo: "repasse", texto: `"${task.titulo}" foi repassada de ${nomeSaiu} para ${primeiroNome(proximo.membroId)}${motivo ? ` (${motivo})` : ""}. Prazo: ${formatarCurto(task.prazo)}.` });
     return proximo.membroId;
   }
   task.responsavelId = null;
@@ -141,8 +149,8 @@ function render() {
   if (!ui.aba) ui.aba = p.papel === "gerente" ? "painel" : "minhas";
   const conteudo =
     p.papel === "gerente"
-      ? { painel: telaPainel, nova: telaNova, equipe: telaEquipe, tipos: telaTipos, registro: telaRegistro }[ui.aba]()
-      : { minhas: telaMinhas, disponibilidade: telaDisponibilidade }[ui.aba]();
+      ? { painel: telaPainel, nova: telaNova, cronograma: telaCronograma, calendario: telaCalendario, equipe: telaEquipe, tipos: telaTipos, registro: telaRegistro }[ui.aba]()
+      : { minhas: telaMinhas, calendario: telaCalendario, disponibilidade: telaDisponibilidade }[ui.aba]();
   raiz.innerHTML = topo(p) + `<main>${conteudo}</main>`;
 }
 
@@ -152,13 +160,16 @@ function topo(p) {
       ? [
           ["painel", "Painel", contarAtencao()],
           ["nova", "Nova task"],
+          ["cronograma", "Cronograma"],
+          ["calendario", "Calendário"],
           ["equipe", "Equipe"],
           ["tipos", "Tipos de task"],
           ["registro", "Histórico"],
         ]
       : [
           ["minhas", "Minhas tasks", estado.tasks.filter((t) => t.responsavelId === p.id && t.status === "atribuida").length],
-          ["disponibilidade", "Minha disponibilidade"],
+          ["calendario", "Calendário"],
+          ["disponibilidade", "Disponibilidade"],
         ];
   return `<header class="topo"><div class="topo-dentro">
     <div class="marca">repasse<span>.</span><small>PS</small></div>
@@ -287,6 +298,7 @@ function telaPainel() {
     <div>
       <div class="cartao"><h2>Precisa de atenção</h2>${atencaoHtml}</div>
       ${resumoHtml}
+      ${cartaoProximos()}
     </div>
     <div class="cartao"><h2>Carga da semana</h2>${carga}</div>
   </div>
@@ -340,8 +352,8 @@ function tabelaTasks() {
 // ---------- Gerente: nova task ----------
 const EXEMPLOS = [
   "Chegaram 14 entregas do desafio de Marketing, corrigir até sexta",
-  "Conduzir 8 entrevistas da segunda fase até quinta, no máximo 3 pessoas",
-  "Responder 20 dúvidas dos aspirantes no e-mail até amanhã",
+  "Preparar o treinamento síncrono de Produto até amanhã",
+  "Responder 20 dúvidas dos aspirantes no Discord até quinta, no máximo 2 pessoas",
   "Consolidar as notas de todos os desafios para a deliberação até 25/11",
 ];
 
@@ -378,6 +390,8 @@ function formularioPedido() {
       ? `<div class="origem ia">Interpretado pela IA.${p.observacao ? ` Atenção: ${esc(p.observacao)}` : ""} Confira os campos antes de continuar.</div>`
       : p.fonte === "manual"
         ? ""
+        : p.fonte === "cronograma"
+          ? `<div class="origem ia">Gerada a partir do cronograma. Ajuste a quantidade e o prazo se precisar.</div>`
         : `<div class="origem">${esc(p.avisoIA || "Interpretado pelas regras locais.")} Confira os campos.</div>`;
   return `<div class="cartao">
     <h2>Conferir</h2>
@@ -625,6 +639,220 @@ function telaDisponibilidade() {
   }`;
 }
 
+// ---------- Discord ----------
+// Avisos para o canal da equipe: silenciosos (se o webhook da equipe não existir, nada acontece).
+function avisarEquipe(corpo) {
+  enviarDiscord(corpo, { perguntarPin: false }).catch(() => {});
+}
+
+async function publicarAspirantes(corpo, mensagemOk) {
+  ui.enviando = true;
+  render();
+  const r = await enviarDiscord(corpo);
+  ui.enviando = false;
+  render();
+  if (r.ok) toast(mensagemOk);
+  else if (r.naoConfigurado) toast("O Discord ainda não está configurado na Vercel (DISCORD_WEBHOOK_ASPIRANTES).");
+  else toast(`Não foi possível publicar no Discord: ${r.erro}`);
+  if (r.ok) registrar(estado, `Discord: ${mensagemOk}`), persistir();
+  return r.ok;
+}
+
+function eventosOrdenados() {
+  return (estado.eventos || []).slice().sort((a, b) => (a.data + (a.hora || "")).localeCompare(b.data + (b.hora || "")));
+}
+
+// Eventos que "acontecem" num dia: treinamentos e avisos na data; desafios no lançamento e na entrega.
+function eventosDoDia(iso) {
+  const lista = [];
+  for (const ev of eventosOrdenados()) {
+    if (ev.tipo === "desafio") {
+      if (ev.data === iso) lista.push({ ...eventoParaDiscord(ev), titulo: `Lançamento: ${ev.titulo}`, quando: formatarCurto(iso) });
+      if (ev.entrega === iso) lista.push({ titulo: `Entrega: ${ev.titulo}`, quando: formatarCurto(iso), local: ev.local || "" });
+    } else if (ev.data === iso) {
+      lista.push(eventoParaDiscord(ev));
+    }
+  }
+  return lista;
+}
+
+function cartaoProximos() {
+  const hojeLista = eventosDoDia(hoje);
+  const amanhaLista = eventosDoDia(somarDias(hoje, 1));
+  const linha = (e) => `<div class="alerta-item"><p><b>${esc(e.titulo)}</b><br><small>${esc(e.quando)}${e.local ? ` · ${esc(e.local)}` : ""}</small></p></div>`;
+  return `<div class="cartao">
+    <div class="linha-titulo"><h2>Cronograma: hoje e amanhã</h2>
+      <button class="botao pequeno" data-acao="enviar-lembretes" ${ui.enviando ? "disabled" : ""}>Lembrar aspirantes no Discord</button></div>
+    <h3 class="prazo">Hoje</h3>${hojeLista.length ? hojeLista.map(linha).join("") : `<p class="vazio">Nada no cronograma.</p>`}
+    <h3 class="prazo" style="margin-top:10px">Amanhã</h3>${amanhaLista.length ? amanhaLista.map(linha).join("") : `<p class="vazio">Nada no cronograma.</p>`}
+  </div>`;
+}
+
+// ---------- Gerente: cronograma ----------
+function sugestoesDoEvento(ev) {
+  const antesDe = (iso, n) => {
+    const d = somarDias(iso, -n);
+    return d < hoje ? hoje : d;
+  };
+  const base = { eventoId: ev.id, area: ev.area };
+  if (ev.tipo === "treinamento")
+    return [
+      { ...base, tipoId: "tp_preparar", titulo: `Preparar ${ev.titulo.charAt(0).toLowerCase()}${ev.titulo.slice(1)}`, prazo: antesDe(ev.data, 1), quantidade: 1 },
+      { ...base, tipoId: "tp_conduzir", titulo: `Conduzir ${ev.titulo.charAt(0).toLowerCase()}${ev.titulo.slice(1)}`, prazo: ev.data < hoje ? hoje : ev.data, quantidade: 1 },
+    ];
+  if (ev.tipo === "desafio")
+    return [
+      { ...base, area: "Geral", tipoId: "tp_duvidas", titulo: `Tirar dúvidas do ${ev.titulo.charAt(0).toLowerCase()}${ev.titulo.slice(1)}`, prazo: (ev.entrega || ev.data) < hoje ? hoje : ev.entrega || ev.data, quantidade: 10 },
+      { ...base, tipoId: "tp_corrigir", titulo: `Corrigir ${ev.titulo.charAt(0).toLowerCase()}${ev.titulo.slice(1)}`, prazo: somarDias(ev.entrega || ev.data, 3) < hoje ? hoje : somarDias(ev.entrega || ev.data, 3), quantidade: 12 },
+    ];
+  return [{ ...base, area: "Geral", tipoId: "tp_avisos", titulo: `Comunicar: ${ev.titulo}`, prazo: ev.data < hoje ? hoje : ev.data, quantidade: 1 }];
+}
+
+function formEvento() {
+  const ev =
+    ui.evEditando === "novo"
+      ? { tipo: "treinamento", titulo: "", area: estado.areas[0], data: hoje, hora: "19:00", entrega: "", local: "", descricao: "" }
+      : estado.eventos.find((e) => e.id === ui.evEditando);
+  if (!ev) return "";
+  const areas = [...estado.areas, "Geral"];
+  return `<div class="cartao bloco" id="form-evento">
+    <h2>${ui.evEditando === "novo" ? "Novo item do cronograma" : "Editar item do cronograma"}</h2>
+    <div class="campos">
+      <div><label>Tipo</label><select id="ev-tipo" data-campo="ev-tipo">${Object.entries(TIPOS_EVENTO)
+        .map(([k, v]) => `<option value="${k}" ${k === ev.tipo ? "selected" : ""}>${v}</option>`)
+        .join("")}</select></div>
+      <div class="campo-largo"><label>Título</label><input type="text" id="ev-titulo" value="${esc(ev.titulo)}" placeholder="Ex.: Treinamento síncrono de Dados"></div>
+      <div><label>Subárea</label><select id="ev-area">${areas.map((a) => `<option ${a === ev.area ? "selected" : ""}>${a}</option>`).join("")}</select></div>
+      <div><label id="ev-data-rotulo">${ev.tipo === "desafio" ? "Lançamento" : "Data"}</label><input type="date" id="ev-data" value="${ev.data}"></div>
+      <div><label>Horário (opcional)</label><input type="time" id="ev-hora" value="${ev.hora || ""}"></div>
+      <div id="ev-entrega-campo" ${ev.tipo === "desafio" ? "" : 'style="display:none"'}><label>Entrega</label><input type="date" id="ev-entrega" value="${ev.entrega || ""}"></div>
+      <div class="campo-largo"><label>Local ou link</label><input type="text" id="ev-local" value="${esc(ev.local)}" placeholder="Ex.: canal de voz #treinamentos"></div>
+      <div class="campo-largo"><label>Descrição (opcional)</label><input type="text" id="ev-descricao" value="${esc(ev.descricao)}"></div>
+    </div>
+    <label class="check" style="margin-top:14px"><input type="checkbox" id="ev-avisar" checked> Avisar os aspirantes no Discord ${ui.evEditando === "novo" ? "(novo item)" : "(se data, horário ou local mudar)"}</label>
+    <div class="acoes" style="margin-top:14px">
+      <button class="botao primario" data-acao="salvar-evento">Salvar</button>
+      <button class="botao texto" data-acao="fechar-evento">Cancelar</button>
+    </div>
+  </div>`;
+}
+
+function telaCronograma() {
+  const evs = eventosOrdenados();
+  const porSemana = new Map();
+  for (const ev of evs) {
+    const d = new Date(ev.data + "T12:00:00");
+    const seg = somarDias(ev.data, -((d.getDay() + 6) % 7));
+    if (!porSemana.has(seg)) porSemana.set(seg, []);
+    porSemana.get(seg).push(ev);
+  }
+  const linhaEv = (ev) => {
+    const sug = ui.evSugestoes === ev.id ? sugestoesHtml(ev) : "";
+    const passado = (ev.entrega || ev.data) < hoje;
+    return `<div class="evento-linha ${passado ? "passado" : ""}">
+      <div class="evento-quando num">${formatarCurto(ev.data)}${ev.hora ? `<br><small>${horaBR(ev.hora)}</small>` : ""}</div>
+      <div>
+        <span class="etiqueta ev-${ev.tipo}">${TIPOS_EVENTO[ev.tipo]}</span> <span class="etiqueta area">${esc(ev.area)}</span>
+        <div class="evento-titulo">${esc(ev.titulo)}</div>
+        <div class="prazo">${ev.tipo === "desafio" && ev.entrega ? `Entrega: ${formatarCurto(ev.entrega)}` : ""}${ev.local ? `${ev.tipo === "desafio" && ev.entrega ? " · " : ""}${esc(ev.local)}` : ""}</div>
+      </div>
+      <div class="acoes">
+        <button class="botao pequeno" data-acao="sugestoes-evento" data-id="${ev.id}">${ui.evSugestoes === ev.id ? "Fechar" : "Tasks da equipe"}</button>
+        <button class="botao texto" data-acao="editar-evento" data-id="${ev.id}">Editar</button>
+        <button class="botao texto perigo" data-acao="excluir-evento" data-id="${ev.id}">Cancelar</button>
+      </div>
+      ${sug}
+    </div>`;
+  };
+  const semanas = [...porSemana.entries()]
+    .map(([seg, lista]) => `<div class="bloco"><h3 class="prazo">Semana de ${formatarCurto(seg)}</h3><div class="cartao" style="padding:6px 18px">${lista.map(linhaEv).join("")}</div></div>`)
+    .join("");
+  return `<div class="linha-titulo"><div><h1>Cronograma do PS</h1>
+    <p class="sub" style="margin:0">Desafios por subárea, treinamentos síncronos e avisos. O que muda aqui pode ir direto para o Discord dos aspirantes.</p></div></div>
+    <div class="acoes" style="margin:18px 0 22px">
+      <button class="botao primario" data-acao="novo-evento">+ Novo item</button>
+      <button class="botao" data-acao="publicar-cronograma" ${ui.enviando ? "disabled" : ""}>Publicar cronograma no Discord</button>
+      <button class="botao" data-acao="enviar-lembretes" ${ui.enviando ? "disabled" : ""}>Lembrar o que é hoje e amanhã</button>
+    </div>
+    ${ui.evEditando ? formEvento() : ""}
+    ${semanas || `<p class="vazio">Nenhum item no cronograma.</p>`}`;
+}
+
+function sugestoesHtml(ev) {
+  const lista = sugestoesDoEvento(ev);
+  return `<div class="sugestoes">
+    <p class="nota" style="margin-top:0">Tasks que a equipe precisa fazer para este item. "Distribuir" abre a Nova task já preenchida.</p>
+    ${lista
+      .map((sg, i) => {
+        const feitas = estado.tasks.filter((t) => t.eventoId === ev.id && t.tipoId === sg.tipoId);
+        return `<div class="sugestao">
+          <div><b>${esc(sg.titulo)}</b><br><small class="prazo">${esc(tipo(sg.tipoId)?.nome || "")} · até ${formatarCurto(sg.prazo)}</small></div>
+          ${
+            feitas.length
+              ? `<span class="etiqueta em_andamento">Já distribuída (${feitas.map((t) => esc(primeiroNome(t.responsavelId))).join(", ")})</span>`
+              : `<button class="botao pequeno primario" data-acao="distribuir-sugestao" data-id="${ev.id}" data-i="${i}">Distribuir</button>`
+          }
+        </div>`;
+      })
+      .join("")}
+  </div>`;
+}
+
+// ---------- Calendário (gerente e membros) ----------
+function telaCalendario() {
+  const eu = membro(ui.perfilId);
+  const gerente = eu.papel === "gerente";
+  const [ano, mes] = ui.calMes.split("-").map(Number);
+  const semanas = gradeMes(ano, mes - 1);
+  const dias = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
+  const celula = (d) => {
+    const itens = itensDoDia(estado, d.iso, { perfilId: eu.id, gerente });
+    const mostrar = itens.slice(0, 3);
+    const resto = itens.length - mostrar.length;
+    return `<button class="cal-dia ${d.doMes ? "" : "fora"} ${d.iso === hoje ? "hoje" : ""} ${d.iso === ui.calDia ? "sel" : ""}" data-acao="cal-dia" data-id="${d.iso}">
+      <span class="cal-num num">${Number(d.iso.slice(8))}</span>
+      ${mostrar.map((i) => `<span class="cal-item ${i.cls}" title="${esc(i.texto)}">${i.rotuloHora ? `${i.rotuloHora} ` : ""}${esc(i.curto || i.texto)}</span>`).join("")}
+      ${resto > 0 ? `<span class="cal-mais">+${resto}</span>` : ""}
+    </button>`;
+  };
+  const grade = `<div class="cal">
+    ${dias.map((d) => `<div class="cal-cab">${d}</div>`).join("")}
+    ${semanas.map((s) => s.map(celula).join("")).join("")}
+  </div>`;
+
+  const itensSel = itensDoDia(estado, ui.calDia, { perfilId: eu.id, gerente });
+  const detalhe = itensSel.length
+    ? itensSel
+        .map((i) => {
+          if (i.task) {
+            const t = i.task;
+            return `<div class="alerta-item"><p><span class="cal-ponto task"></span><b>${esc(t.titulo)}</b><br><small>Prazo da task · ${esc(membro(t.responsavelId)?.nome || "sem responsável")} · ${ROTULO[statusDe(t)]}</small></p></div>`;
+          }
+          const ev = i.evento;
+          return `<div class="alerta-item"><p><span class="cal-ponto ${i.cls}"></span><b>${esc(i.texto)}</b><br><small>${TIPOS_EVENTO[ev.tipo]} · ${esc(ev.area)}${i.rotuloHora ? ` · ${i.rotuloHora}` : ""}${ev.local ? ` · ${esc(ev.local)}` : ""}</small></p>${gerente ? `<button class="botao pequeno" data-acao="ir-evento" data-id="${ev.id}">Abrir no cronograma</button>` : ""}</div>`;
+        })
+        .join("")
+    : `<p class="vazio">Nada neste dia.</p>`;
+
+  return `<div class="linha-titulo"><div><h1>Calendário</h1>
+    <p class="sub" style="margin:0">${gerente ? "Cronograma do PS e prazos de todas as tasks da equipe." : "Cronograma do PS e os prazos das suas tasks."}</p></div></div>
+    <div class="grade grade-3-1" style="margin-top:20px">
+      <div class="cartao">
+        <div class="linha-titulo">
+          <h2 style="text-transform:capitalize">${MESES[mes - 1]} ${ano}</h2>
+          <div class="acoes">
+            <button class="botao pequeno" data-acao="cal-mes" data-id="-1" aria-label="Mês anterior">‹</button>
+            <button class="botao pequeno" data-acao="cal-mes" data-id="0">Hoje</button>
+            <button class="botao pequeno" data-acao="cal-mes" data-id="1" aria-label="Próximo mês">›</button>
+          </div>
+        </div>
+        ${grade}
+        <div class="cal-legenda"><span><i class="cal-ponto desafio"></i>Lançamento de desafio</span><span><i class="cal-ponto entrega"></i>Entrega de desafio</span><span><i class="cal-ponto treinamento"></i>Treinamento síncrono</span><span><i class="cal-ponto aviso"></i>Aviso</span><span><i class="cal-ponto task"></i>${gerente ? "Prazo de task" : "Prazo seu"}</span></div>
+      </div>
+      <div class="cartao"><h2>${formatarCurto(ui.calDia)}</h2>${detalhe}</div>
+    </div>`;
+}
+
 // ---------- Ações ----------
 const acoes = {
   entrar(el) {
@@ -726,6 +954,7 @@ const acoes = {
         historico: [],
         criadaEm: hoje,
         origem: ui.nova.texto,
+        eventoId: pedido.eventoId || null,
       };
       estado.tasks.push(t);
       atribuirTask(t, membroId, `Atribuída a ${primeiroNome(membroId)} pelo repasse e confirmada pela gerência.`);
@@ -736,6 +965,12 @@ const acoes = {
       `Nova task "${pedido.titulo}" distribuída: ${criadas.map((t) => `${primeiroNome(t.responsavelId)} (${horas(t.esforcoH)})`).join(", ")}.`
     );
     persistir();
+    avisarEquipe({
+      tipo: "task",
+      titulo: pedido.titulo,
+      prazo: formatarCurto(pedido.prazo),
+      partes: criadas.map((t) => `${primeiroNome(t.responsavelId)}: ${dividida ? `${t.unidades} de ${proposta.quantidade} · ` : ""}${horas(t.esforcoH)}`),
+    });
     ui.nova.criadas = { lista: criadas, pedido: { ...pedido } };
     render();
     window.scrollTo(0, 0);
@@ -830,6 +1065,138 @@ const acoes = {
     render();
   },
 
+
+  // Cronograma
+  "novo-evento"() {
+    ui.evEditando = "novo";
+    render();
+    document.getElementById("ev-titulo")?.focus();
+  },
+  "editar-evento"(el) {
+    ui.evEditando = el.dataset.id;
+    render();
+    document.getElementById("form-evento")?.scrollIntoView({ behavior: "smooth" });
+  },
+  "fechar-evento"() {
+    ui.evEditando = null;
+    render();
+  },
+  async "salvar-evento"() {
+    const v = (id) => document.getElementById(id).value.trim();
+    const dados = {
+      tipo: v("ev-tipo"),
+      titulo: v("ev-titulo"),
+      area: v("ev-area"),
+      data: v("ev-data"),
+      hora: v("ev-hora") || null,
+      entrega: v("ev-tipo") === "desafio" ? v("ev-entrega") || null : null,
+      local: v("ev-local"),
+      descricao: v("ev-descricao"),
+    };
+    const avisar = document.getElementById("ev-avisar").checked;
+    if (!dados.titulo) return toast("Dê um título.");
+    if (!dados.data) return toast("Defina a data.");
+    if (dados.entrega && dados.entrega < dados.data) return toast("A entrega não pode ser antes do lançamento.");
+    let corpo = null;
+    let msg = "";
+    if (ui.evEditando === "novo") {
+      const ev = { id: novoId("e"), ...dados };
+      estado.eventos.push(ev);
+      registrar(estado, `Cronograma: "${ev.titulo}" adicionado (${resumoDatas(ev)}).`);
+      corpo = { tipo: "novo", evento: eventoParaDiscord(ev) };
+      msg = `aspirantes avisados sobre "${ev.titulo}".`;
+      ui.evSugestoes = ev.id;
+    } else {
+      const ev = estado.eventos.find((e) => e.id === ui.evEditando);
+      const antes = resumoDatas(ev);
+      Object.assign(ev, dados);
+      const depois = resumoDatas(ev);
+      registrar(estado, `Cronograma: "${ev.titulo}" atualizado${antes !== depois ? ` (${antes} → ${depois})` : ""}.`);
+      if (antes !== depois) {
+        corpo = { tipo: "mudanca", evento: eventoParaDiscord(ev), antes, depois };
+        msg = `aspirantes avisados da mudança em "${ev.titulo}".`;
+      }
+    }
+    ui.evEditando = null;
+    persistir();
+    render();
+    if (avisar && corpo) await publicarAspirantes(corpo, msg);
+    else toast("Cronograma salvo.");
+  },
+  async "excluir-evento"(el) {
+    const ev = estado.eventos.find((e) => e.id === el.dataset.id);
+    const avisar = confirm(`Cancelar "${ev.titulo}"?\n\nOK cancela e avisa os aspirantes no Discord.`);
+    if (!avisar) return;
+    estado.eventos = estado.eventos.filter((e) => e.id !== ev.id);
+    registrar(estado, `Cronograma: "${ev.titulo}" cancelado.`);
+    persistir();
+    render();
+    await publicarAspirantes({ tipo: "cancelado", evento: eventoParaDiscord(ev) }, `aspirantes avisados do cancelamento de "${ev.titulo}".`);
+  },
+  "sugestoes-evento"(el) {
+    ui.evSugestoes = ui.evSugestoes === el.dataset.id ? null : el.dataset.id;
+    render();
+  },
+  "distribuir-sugestao"(el) {
+    const ev = estado.eventos.find((e) => e.id === el.dataset.id);
+    const sg = sugestoesDoEvento(ev)[Number(el.dataset.i)];
+    const t = tipo(sg.tipoId);
+    ui.nova = novaVazia();
+    ui.nova.texto = sg.titulo;
+    ui.nova.pedido = {
+      titulo: sg.titulo,
+      tipoId: sg.tipoId,
+      area: sg.area,
+      prazo: sg.prazo,
+      prazoInferido: false,
+      quantidade: sg.quantidade,
+      esforcoPorUnidadeH: t.esforcoPadraoH,
+      maxPessoas: null,
+      eventoId: ev.id,
+      fonte: "cronograma",
+    };
+    ui.nova.passo = 2;
+    ui.aba = "nova";
+    render();
+    window.scrollTo(0, 0);
+  },
+  "ir-evento"(el) {
+    ui.aba = "cronograma";
+    ui.evSugestoes = el.dataset.id;
+    render();
+  },
+  async "publicar-cronograma"() {
+    const futuros = eventosOrdenados().filter((e) => (e.entrega || e.data) >= hoje);
+    await publicarAspirantes(
+      { tipo: "cronograma", titulo: "Cronograma do processo seletivo", eventos: futuros.map(eventoParaDiscord) },
+      `cronograma publicado (${futuros.length} itens).`
+    );
+  },
+  async "enviar-lembretes"() {
+    await publicarAspirantes(
+      { tipo: "lembrete", hoje: eventosDoDia(hoje), amanha: eventosDoDia(somarDias(hoje, 1)) },
+      "lembretes de hoje e amanhã enviados."
+    );
+  },
+
+  // Calendário
+  "cal-mes"(el) {
+    const n = Number(el.dataset.id);
+    if (n === 0) {
+      ui.calMes = hoje.slice(0, 7);
+      ui.calDia = hoje;
+    } else {
+      const [a, m] = ui.calMes.split("-").map(Number);
+      const d = new Date(a, m - 1 + n, 1);
+      ui.calMes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    }
+    render();
+  },
+  "cal-dia"(el) {
+    ui.calDia = el.dataset.id;
+    render();
+  },
+
   // Membro
   aceitar(el) {
     const t = estado.tasks.find((x) => x.id === el.dataset.id);
@@ -908,6 +1275,12 @@ const acoes = {
 
 // Campos editáveis
 const campos = {
+  "ev-tipo"(el) {
+    const desafio = el.value === "desafio";
+    document.getElementById("ev-entrega-campo").style.display = desafio ? "" : "none";
+    document.getElementById("ev-data-rotulo").textContent = desafio ? "Lançamento" : "Data";
+    return false;
+  },
   "texto-pedido"(el) {
     ui.nova.texto = el.value;
   },
