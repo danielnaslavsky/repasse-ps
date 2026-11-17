@@ -160,13 +160,36 @@ export function validarRespostaIA(r, local, estado) {
   return ok;
 }
 
-export async function interpretar(texto, estado, hoje) {
-  const local = interpretarLocal(texto, estado, hoje);
+// fetch com limite de tempo: se a IA demorar, o sistema segue com as regras locais.
+async function chamarIA(corpo, ms) {
+  const controle = new AbortController();
+  const timer = setTimeout(() => controle.abort(), ms);
   try {
     const resp = await fetch("/api/ia", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: JSON.stringify(corpo),
+      signal: controle.signal,
+    });
+    let dados = null;
+    try { dados = await resp.json(); } catch (e) { /* resposta sem JSON */ }
+    if (!resp.ok || !dados || dados.erro) {
+      throw new Error((dados && dados.erro) || `HTTP ${resp.status}`);
+    }
+    return dados;
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error(`a IA demorou mais de ${ms / 1000}s`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function interpretar(texto, estado, hoje) {
+  const local = interpretarLocal(texto, estado, hoje);
+  try {
+    const dados = await chamarIA(
+      {
         acao: "interpretar",
         texto,
         hoje,
@@ -177,25 +200,17 @@ export async function interpretar(texto, estado, hoje) {
           esforcoPadraoH: t.esforcoPadraoH,
           divisivel: t.divisivel,
         })),
-      }),
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const dados = await resp.json();
-    if (!dados || dados.erro) throw new Error(dados ? dados.erro : "sem resposta");
+      },
+      20000
+    );
     return validarRespostaIA(dados, local, estado);
   } catch (e) {
-    return { ...local, avisoIA: "IA indisponível: interpretado pelas regras locais." };
+    console.warn("IA indisponível:", e.message);
+    return { ...local, avisoIA: `IA indisponível (${e.message}): interpretado pelas regras locais.` };
   }
 }
 
 export async function resumirComIA(contexto) {
-  const resp = await fetch("/api/ia", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ acao: "resumo", contexto }),
-  });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const dados = await resp.json();
-  if (dados.erro) throw new Error(dados.erro);
+  const dados = await chamarIA({ acao: "resumo", contexto }, 25000);
   return dados.texto;
 }

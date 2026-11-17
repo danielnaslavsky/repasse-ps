@@ -792,7 +792,7 @@ const acoes = {
       ui.resumo = {
         texto: ui.resumo.texto,
         carregando: false,
-        erro: "A IA não está disponível agora (a chave do Gemini precisa estar configurada na Vercel).",
+        erro: `A IA não respondeu: ${e.message}`,
       };
     }
     render();
