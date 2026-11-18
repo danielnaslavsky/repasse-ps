@@ -39,6 +39,7 @@ const ui = {
   enviando: false,
   cronoVista: "lista", // "lista" ou "calendario"
   ausenciaAberta: false,
+  google: { configurado: false, planilha: null, sincronizando: false },
   plano: null, // { passo: "texto" | "lendo" | "revisao", texto, nAspirantes, substituir, publicar, lido, resultado }
 };
 
@@ -119,6 +120,8 @@ function atribuirTask(task, membroId, motivo) {
   task.responsavelId = membroId;
   task.status = membroId ? "atribuida" : "sem_responsavel";
   task.atribuidaEm = hoje;
+  task.atribuidaTs = Date.now();
+  delete task.atrasoTratado;
   task.historico.push({ em: new Date().toISOString(), texto: motivo });
   if (membroId) {
     const r = pontuar(estado, membro(membroId), { ...task, esforcoH: 0 }, hoje);
@@ -290,7 +293,7 @@ function telaPainel() {
       </div>
       ${cartaoProximos()}
     </div>
-    <div class="cartao"><h2>Carga da semana</h2>${carga}</div>
+    <div>${cartaoPiloto()}<div class="cartao"><h2>Carga da semana</h2>${carga}</div></div>
   </div>
   ${tabelaTasks()}`;
 }
@@ -760,6 +763,8 @@ function telaCronograma() {
       <button class="botao" data-acao="novo-evento">+ Novo item</button>
       <button class="botao" data-acao="publicar-cronograma" ${ui.enviando ? "disabled" : ""}>Publicar no Discord</button>
       <button class="botao" data-acao="enviar-lembretes" ${ui.enviando ? "disabled" : ""}>Lembrar hoje e amanhã</button>
+      <button class="botao" data-acao="sincronizar-google" ${ui.google.sincronizando ? "disabled" : ""}>${ui.google.sincronizando ? "Atualizando planilha…" : "Atualizar planilha"}</button>
+      ${ui.google.planilha ? `<a class="botao" href="${esc(ui.google.planilha)}" target="_blank" rel="noopener">Abrir planilha</a>` : ""}
     </div>
     ${ui.evEditando ? formEvento() : ""}
     ${ui.cronoVista === "calendario" ? calendarioHtml(true) : semanas || `<p class="vazio">Nenhum item no cronograma.</p>`}`;
@@ -842,6 +847,140 @@ function calendarioHtml(gerente) {
       </div>
       <div class="cartao"><h2>${formatarCurto(ui.calDia)}</h2>${detalhe}</div>
     </div>`;
+}
+
+// ---------- Piloto automático ----------
+const PREFIXO_PILOTO = "Piloto automático: ";
+const UM_DIA = 24 * 60 * 60 * 1000;
+
+function idadeAtribuicao(t) {
+  if (t.atribuidaTs) return Date.now() - t.atribuidaTs;
+  return Math.max(0, diferencaDias(t.atribuidaEm || hoje, hoje)) * UM_DIA;
+}
+
+// Regras que rodam sozinhas: ao abrir o site e a cada minuto com ele aberto.
+function rodarPiloto() {
+  const pl = estado.piloto;
+  const acoes = [];
+  if (pl.aceite24h) {
+    for (const t of estado.tasks) {
+      if (t.status !== "atribuida" || !t.responsavelId) continue;
+      if (idadeAtribuicao(t) < UM_DIA) continue;
+      const antes = primeiroNome(t.responsavelId);
+      const novo = repassar(t, t.responsavelId, "não aceitou em 24h");
+      acoes.push(`"${t.titulo}" não foi aceita por ${antes} em 24h; ${novo ? `repassada para ${primeiroNome(novo)}` : "ninguém elegível, ficou para a gerência"}.`);
+    }
+  }
+  if (pl.atrasadas !== "desligado") {
+    for (const t of estado.tasks) {
+      if (t.status === "concluida" || !t.responsavelId || t.prazo >= hoje || t.atrasoTratado) continue;
+      if (pl.atrasadas === "repassar") {
+        const antes = primeiroNome(t.responsavelId);
+        t.prazo = somarDias(hoje, 1);
+        const novo = repassar(t, t.responsavelId, "atrasada");
+        t.atrasoTratado = true;
+        acoes.push(`"${t.titulo}" estava atrasada com ${antes}; ${novo ? `repassada para ${primeiroNome(novo)} com prazo para amanhã` : "ninguém elegível, ficou para a gerência"}.`);
+      } else {
+        t.atrasoTratado = true;
+        acoes.push(`"${t.titulo}" está atrasada com ${primeiroNome(t.responsavelId)}; a equipe foi avisada.`);
+        avisarEquipe({ tipo: "repasse", texto: `Atenção: "${t.titulo}" está atrasada (prazo ${formatarCurto(t.prazo)}, com ${primeiroNome(t.responsavelId)}).` });
+      }
+    }
+  }
+  for (const a of acoes) registrar(estado, PREFIXO_PILOTO + a);
+  if (acoes.length) persistir();
+  return acoes.length;
+}
+
+// Quando um item do cronograma muda de data, as tasks ligadas a ele acompanham.
+function ajustarTasksDoEvento(ev) {
+  if (!estado.piloto.seguirCronograma) return 0;
+  const esperadas = tarefasDoEvento(ev, hoje, 12);
+  let n = 0;
+  for (const t of estado.tasks) {
+    if (t.eventoId !== ev.id || t.status === "concluida") continue;
+    const alvo = esperadas.find((x) => x.tipoId === t.tipoId);
+    if (!alvo || alvo.prazo === t.prazo) continue;
+    const antes = t.prazo;
+    t.prazo = alvo.prazo;
+    delete t.atrasoTratado;
+    n++;
+    const resp = t.responsavelId && membro(t.responsavelId);
+    if (resp && resp.indisponivelAte && resp.indisponivelAte >= t.prazo) {
+      const novo = repassar(t, resp.id, "indisponível na nova data");
+      registrar(estado, `${PREFIXO_PILOTO}"${t.titulo}" mudou de ${formatarCurto(antes)} para ${formatarCurto(t.prazo)}; ${resp.nome.split(" ")[0]} está indisponível, ${novo ? `repassada para ${primeiroNome(novo)}` : "ficou para a gerência"}.`);
+    } else {
+      registrar(estado, `${PREFIXO_PILOTO}"${t.titulo}" acompanhou o cronograma: prazo de ${formatarCurto(antes)} para ${formatarCurto(t.prazo)}.`);
+    }
+  }
+  return n;
+}
+
+function cancelarTasksDoEvento(ev) {
+  if (!estado.piloto.seguirCronograma) return 0;
+  const canceladas = estado.tasks.filter((t) => t.eventoId === ev.id && t.status !== "concluida");
+  if (!canceladas.length) return 0;
+  estado.tasks = estado.tasks.filter((t) => !canceladas.includes(t));
+  registrar(estado, `${PREFIXO_PILOTO}${canceladas.length} task(s) de "${ev.titulo}" canceladas junto com o item.`);
+  return canceladas.length;
+}
+
+// ---------- Google Sheets ----------
+async function consultarGoogle() {
+  try {
+    const r = await fetch("/api/google");
+    if (!r.ok) return;
+    const d = await r.json();
+    ui.google.configurado = !!d.configurado;
+    ui.google.planilha = d.planilha || null;
+    render();
+  } catch (e) { /* sem função da Vercel (ex.: rodando localmente) */ }
+}
+
+async function sincronizarGoogle({ manual = false } = {}) {
+  if (!manual && !estado.piloto.sincronizarGoogle) return;
+  if (!manual && !ui.google.configurado) return;
+  ui.google.sincronizando = true;
+  if (manual) render();
+  const eventos = eventosOrdenados().map((e) => ({ ...e, tipoRotulo: TIPOS_EVENTO[e.tipo] }));
+  try {
+    const r = await fetch("/api/google", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventos }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.erro || `HTTP ${r.status}`);
+    estado.googleSinc = { em: new Date().toISOString(), erro: null };
+    if (manual) toast(`Planilha atualizada (${d.itens} itens).`);
+  } catch (e) {
+    estado.googleSinc = { em: new Date().toISOString(), erro: e.message };
+    if (manual) toast(d_naoConfig(e.message));
+  }
+  ui.google.sincronizando = false;
+  persistir();
+  render();
+}
+function d_naoConfig(msg) {
+  return /não configurada/.test(msg) ? "A planilha do Google ainda não está configurada na Vercel (GOOGLE_SCRIPT_URL)." : `Não foi possível atualizar a planilha: ${msg}`;
+}
+
+function cartaoPiloto() {
+  const pl = estado.piloto;
+  const ultimas = estado.registro.filter((r) => r.texto.startsWith(PREFIXO_PILOTO)).slice(0, 4);
+  const sinc = estado.googleSinc;
+  const chk = (campo, txt, ligado) => `<label class="check piloto-regra"><input type="checkbox" data-campo="piloto" data-chave="${campo}" ${ligado ? "checked" : ""}> ${txt}</label>`;
+  return `<div class="cartao">
+    <div class="linha-titulo"><h2>Piloto automático</h2><span class="etiqueta em_andamento">ligado</span></div>
+    ${chk("aceite24h", "Repassar se não aceitar em 24h", pl.aceite24h)}
+    <div class="piloto-regra"><label for="piloto-atrasadas" style="margin:0;color:var(--tinta);font-size:14px">Task atrasada:</label>
+      <select id="piloto-atrasadas" data-campo="piloto" data-chave="atrasadas" style="width:auto">
+        <option value="avisar" ${pl.atrasadas === "avisar" ? "selected" : ""}>avisar a equipe</option>
+        <option value="repassar" ${pl.atrasadas === "repassar" ? "selected" : ""}>repassar sozinho</option>
+        <option value="desligado" ${pl.atrasadas === "desligado" ? "selected" : ""}>não fazer nada</option>
+      </select></div>
+    ${chk("seguirCronograma", "Tasks acompanham mudanças do cronograma", pl.seguirCronograma)}
+    ${chk("sincronizarGoogle", `Atualizar a planilha dos aspirantes${ui.google.configurado ? "" : " (configure na Vercel)"}`, pl.sincronizarGoogle)}
+    ${sinc ? `<p class="nota ${sinc.erro ? "erro" : ""}">Planilha: ${sinc.erro ? esc(sinc.erro) : `atualizada em ${new Date(sinc.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}</p>` : ""}
+    <h3 class="prazo" style="margin-top:14px">O que ele fez</h3>
+    ${ultimas.length ? ultimas.map((r) => `<p class="piloto-acao">${esc(r.texto.slice(PREFIXO_PILOTO.length))}</p>`).join("") : `<p class="vazio">Nada ainda.</p>`}
+  </div>`;
 }
 
 // ---------- Gerente: montar o PS a partir do planejamento ----------
@@ -1213,6 +1352,7 @@ const acoes = {
       Object.assign(ev, dados);
       const depois = resumoDatas(ev);
       registrar(estado, `Cronograma: "${ev.titulo}" atualizado${antes !== depois ? ` (${antes} → ${depois})` : ""}.`);
+      ajustarTasksDoEvento(ev);
       if (antes !== depois) {
         corpo = { tipo: "mudanca", evento: eventoParaDiscord(ev), antes, depois };
         msg = `aspirantes avisados da mudança em "${ev.titulo}".`;
@@ -1221,6 +1361,7 @@ const acoes = {
     ui.evEditando = null;
     persistir();
     render();
+    sincronizarGoogle();
     if (avisar && corpo) await publicarAspirantes(corpo, msg);
     else toast("Cronograma salvo.");
   },
@@ -1230,8 +1371,10 @@ const acoes = {
     if (!avisar) return;
     estado.eventos = estado.eventos.filter((e) => e.id !== ev.id);
     registrar(estado, `Cronograma: "${ev.titulo}" cancelado.`);
+    cancelarTasksDoEvento(ev);
     persistir();
     render();
+    sincronizarGoogle();
     await publicarAspirantes({ tipo: "cancelado", evento: eventoParaDiscord(ev) }, `aspirantes avisados do cancelamento de "${ev.titulo}".`);
   },
   "sugestoes-evento"(el) {
@@ -1368,10 +1511,14 @@ const acoes = {
     render();
     window.scrollTo(0, 0);
     toast(`Pronto: ${novosEventos.length} itens e ${criadas} tasks criadas.`);
+    sincronizarGoogle();
     if (publicar) {
       const futuros = eventosOrdenados().filter((e) => (e.entrega || e.data) >= hoje);
       await publicarAspirantes({ tipo: "cronograma", titulo: "Cronograma do processo seletivo", eventos: futuros.map(eventoParaDiscord) }, `cronograma publicado (${futuros.length} itens).`);
     }
+  },
+  "sincronizar-google"() {
+    sincronizarGoogle({ manual: true });
   },
   "crono-vista"(el) {
     ui.cronoVista = el.dataset.id;
@@ -1481,6 +1628,17 @@ const acoes = {
 
 // Campos editáveis
 const campos = {
+  piloto(el) {
+    const k = el.dataset.chave;
+    estado.piloto[k] = el.type === "checkbox" ? el.checked : el.value;
+    registrar(estado, `Gerência ${el.type === "checkbox" ? (el.checked ? "ligou" : "desligou") : "ajustou"} a regra do piloto automático: ${k}.`);
+    persistir();
+    if (el.checked || el.type !== "checkbox") {
+      const n = rodarPiloto();
+      if (n) toast(`Piloto automático: ${n} ação(ões) agora.`);
+    }
+    return true;
+  },
   "plano-n"(el) {
     ui.plano.nAspirantes = Math.max(1, Math.min(500, Number(el.value) || 12));
     return false;
@@ -1607,4 +1765,15 @@ document.addEventListener("keydown", (ev) => {
   }
 });
 
+const acoesIniciais = rodarPiloto();
 render();
+if (acoesIniciais && ui.perfilId && membro(ui.perfilId)?.papel === "gerente")
+  setTimeout(() => toast(`Piloto automático: ${acoesIniciais} ação(ões) desde a última visita. Veja no painel.`), 400);
+consultarGoogle();
+setInterval(() => {
+  const n = rodarPiloto();
+  if (n) {
+    render();
+    toast(`Piloto automático: ${n} ação(ões).`);
+  }
+}, 60000);

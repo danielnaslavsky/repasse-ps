@@ -73,12 +73,12 @@ export function dadosDemonstracao(hoje = hojeISO()) {
 
   const tasks = [
     t({ titulo: "Corrigir desafio — Dados (6 de 12)", tipoId: "tp_corrigir", area: "Dados", prazo: d(2), esforcoH: 3, responsavelId: "m_ana", status: "em_andamento" }),
-    t({ titulo: "Corrigir desafio — Dados (6 de 12)", tipoId: "tp_corrigir", area: "Dados", prazo: d(2), esforcoH: 3, responsavelId: "m_iara", status: "atribuida" }),
+    t({ titulo: "Corrigir desafio — Dados (6 de 12)", tipoId: "tp_corrigir", area: "Dados", prazo: d(2), esforcoH: 3, responsavelId: "m_iara", status: "atribuida", atribuidaEm: d(-2) }),
     t({ titulo: "Preparar treinamento síncrono — Marketing", tipoId: "tp_preparar", area: "Marketing", prazo: d(0), esforcoH: 3, responsavelId: "m_carla", status: "em_andamento" }),
     t({ titulo: "Conduzir treinamento síncrono — Inovação", tipoId: "tp_conduzir", area: "Inovação", prazo: d(0), esforcoH: 2, responsavelId: "m_laura", status: "em_andamento" }),
     t({ titulo: "Tirar dúvidas do desafio de Desenvolvimento no Discord", tipoId: "tp_duvidas", area: "Geral", prazo: d(-1), esforcoH: 1.5, responsavelId: "m_diego", status: "atribuida", criadaEm: d(-4), atribuidaEm: d(-4) }),
-    t({ titulo: "Preparar treinamento síncrono — Produto", tipoId: "tp_preparar", area: "Produto", prazo: d(1), esforcoH: 3, responsavelId: "m_joao", status: "atribuida" }),
-    t({ titulo: "Corrigir desafio — Desenvolvimento", tipoId: "tp_corrigir", area: "Desenvolvimento", prazo: d(3), esforcoH: 4, responsavelId: "m_bruno", status: "atribuida" }),
+    t({ titulo: "Preparar treinamento síncrono — Produto", tipoId: "tp_preparar", area: "Produto", prazo: d(1), esforcoH: 3, responsavelId: "m_joao", status: "atribuida", atribuidaEm: d(0) }),
+    t({ titulo: "Corrigir desafio — Desenvolvimento", tipoId: "tp_corrigir", area: "Desenvolvimento", prazo: d(3), esforcoH: 4, responsavelId: "m_bruno", status: "atribuida", atribuidaEm: d(0) }),
     t({ titulo: "Conduzir treinamento síncrono — Dados", tipoId: "tp_conduzir", area: "Dados", prazo: d(-3), esforcoH: 2, responsavelId: "m_ana", status: "concluida", concluidaEm: d(-3), criadaEm: d(-6), atribuidaEm: d(-6) }),
     t({ titulo: "Corrigir desafio — Comercial", tipoId: "tp_corrigir", area: "Comercial", prazo: d(-1), esforcoH: 3, responsavelId: "m_heitor", status: "concluida", concluidaEm: d(-1), criadaEm: d(-5), atribuidaEm: d(-5) }),
   ];
@@ -91,8 +91,13 @@ export function dadosDemonstracao(hoje = hojeISO()) {
     membros,
     tasks,
     eventos,
+    piloto: pilotoPadrao(),
     registro: [{ em: new Date().toISOString(), texto: "Dados de demonstração carregados." }],
   };
+}
+
+export function pilotoPadrao() {
+  return { aceite24h: true, atrasadas: "avisar", seguirCronograma: true, sincronizarGoogle: true };
 }
 
 export function carregar() {
@@ -100,7 +105,10 @@ export function carregar() {
     const bruto = localStorage.getItem(CHAVE);
     if (bruto) {
       const estado = JSON.parse(bruto);
-      if (estado && estado.versao === VERSAO) return estado;
+      if (estado && estado.versao === VERSAO) {
+        if (!estado.piloto) estado.piloto = pilotoPadrao();
+        return estado;
+      }
     }
   } catch (e) {
     // localStorage indisponível ou corrompido: segue com a demonstração

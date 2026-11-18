@@ -31,6 +31,19 @@ A gerência cola o texto de como o PS vai ser estruturado (ou abre um .txt) e in
 
 Sem IA disponível, regras locais leem um item por linha ("Desafio de Dados: lançamento 23/11, entrega 27/11").
 
+## Piloto automático
+
+Regras que rodam sozinhas, sem a gerência clicar (ao abrir o site e a cada minuto com ele aberto). Cada uma pode ser ligada ou desligada no painel, que também mostra o que o piloto fez:
+
+- **Não aceitou em 24h:** a task vai para a próxima pessoa mais bem pontuada.
+- **Task atrasada:** avisa a equipe no Discord, ou repassa sozinha com prazo para o dia seguinte.
+- **Tasks acompanham o cronograma:** se um treinamento muda de data, os prazos de preparar e conduzir mudam junto, e quem estiver indisponível na nova data é trocado. Se um item é cancelado, as tasks dele são canceladas.
+- **Planilha dos aspirantes:** a cada mudança no cronograma, a planilha do Google Sheets é atualizada.
+
+## Planilha do Google Sheets (e Google Agenda)
+
+O cronograma é publicado numa planilha que os aspirantes acessam como leitores, com duas abas: **Cronograma** (uma linha por item) e **Calendário** (grade mensal). Opcionalmente, o mesmo script cria os eventos num **Google Agenda**. Instalação no topo de `google/apps-script.gs`; na Vercel, `GOOGLE_SCRIPT_URL`, `GOOGLE_SCRIPT_TOKEN` e, se quiser o botão "Abrir planilha", `GOOGLE_SHEET_URL`.
+
 ## Cronograma, calendário e Discord
 
 O PS é organizado em **desafios por subárea** (com data de lançamento e de entrega) e **treinamentos síncronos**. A aba **Cronograma** guarda esses itens e, para cada um, sugere as tasks da equipe: preparar e conduzir o treinamento, tirar dúvidas e corrigir as entregas do desafio. Um clique em "Distribuir" abre a Nova task já preenchida.
@@ -85,6 +98,8 @@ js/dados.js           estado, dados de demonstração e persistência
 js/datas.js           utilitários de data
 api/ia.js             função serverless que chama o Gemini
 api/discord.js        função serverless que publica no Discord
+api/google.js         função serverless que atualiza a planilha do Google
+google/apps-script.gs script da planilha (lista, calendário e Google Agenda opcional)
 testes/               testes automatizados
 ```
 
@@ -104,6 +119,7 @@ node testes/motor.test.mjs
 node testes/plano.test.mjs
 node testes/api.test.cjs
 node testes/discord.test.cjs
+node testes/google.test.cjs
 ```
 
 ## Publicar na Vercel
@@ -124,5 +140,5 @@ node testes/discord.test.cjs
 ## Limitações e próximos passos
 
 - Os dados ficam no navegador de cada pessoa. Para uso real pela equipe, o próximo passo é um banco compartilhado (por exemplo, Supabase) com login.
-- Os lembretes do Discord saem quando a gerência clica. Lembretes automáticos num horário fixo exigem guardar o cronograma no servidor (próximo passo junto com o banco compartilhado).
+- O piloto automático roda no navegador de quem está com o site aberto. Rodar 24h no servidor (lembretes num horário fixo, cobranças de madrugada) e avisar cada membro direto no Discord, com botões de aceitar e repassar, exigem um banco compartilhado e um bot do Discord: é o próximo passo.
 - Os pesos do motor são fixos. Uma versão futura deixaria a gerência ajustá-los e aprenderia com as trocas manuais que ela faz.

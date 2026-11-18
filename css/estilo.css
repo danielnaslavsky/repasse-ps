@@ -319,3 +319,7 @@ details.secao .cartao { border: 0; padding: 0; }
 .plano-parte select { border: 0; padding: 4px 6px; min-width: 0; width: auto; font-size: 13px; }
 .plano-parte small { color: var(--suave); font-size: 12px; white-space: nowrap; }
 @media (max-width: 760px) { .plano-task { grid-template-columns: 1fr; margin-left: 0; } .plano-partes { justify-content: flex-start; } }
+
+/* ---------- Piloto automático ---------- */
+.piloto-regra { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
+.piloto-acao { font-size: 13px; color: var(--suave); margin: 0; padding: 6px 0; border-top: 1px dashed var(--linha); }
