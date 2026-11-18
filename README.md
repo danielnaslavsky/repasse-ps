@@ -15,7 +15,7 @@ Num PS, a gerência distribui dezenas de tasks curtas e com prazo apertado: corr
 **Perfis**
 
 - **Gerente do PS:** cria tasks, confirma a distribuição proposta, acompanha o painel, ajusta a equipe e os tipos de task.
-- **Membro do PS:** vê só as próprias tasks, aceita, conclui ou aperta "Não consigo", e avisa ausências.
+- **Membro do PS:** uma tela só, com as próprias tasks. Aceita, conclui ou aperta "Não consigo", e avisa ausências com "Vou me ausentar".
 
 **Fluxo**
 
@@ -29,7 +29,7 @@ Num PS, a gerência distribui dezenas de tasks curtas e com prazo apertado: corr
 
 O PS é organizado em **desafios por subárea** (com data de lançamento e de entrega) e **treinamentos síncronos**. A aba **Cronograma** guarda esses itens e, para cada um, sugere as tasks da equipe: preparar e conduzir o treinamento, tirar dúvidas e corrigir as entregas do desafio. Um clique em "Distribuir" abre a Nova task já preenchida.
 
-A aba **Calendário** mostra, mês a mês, os lançamentos, entregas, treinamentos e os prazos das tasks. A gerência vê tudo; cada membro vê o cronograma e só os próprios prazos.
+A visão **Calendário** (dentro do Cronograma, e no botão "Ver calendário" dos membros) mostra, mês a mês, os lançamentos, entregas, treinamentos e os prazos das tasks. A gerência vê tudo; cada membro vê o cronograma e só os próprios prazos.
 
 O **bot do Discord** avisa os aspirantes no canal do PS:
 

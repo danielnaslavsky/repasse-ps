@@ -36,6 +36,8 @@ const ui = {
   evEditando: null, // id do evento, "novo" ou null
   evSugestoes: null, // id do evento cujas tasks sugeridas estão abertas
   enviando: false,
+  cronoVista: "lista", // "lista" ou "calendario"
+  ausenciaAberta: false,
 };
 
 function novaVazia() {
@@ -149,8 +151,8 @@ function render() {
   if (!ui.aba) ui.aba = p.papel === "gerente" ? "painel" : "minhas";
   const conteudo =
     p.papel === "gerente"
-      ? { painel: telaPainel, nova: telaNova, cronograma: telaCronograma, calendario: telaCalendario, equipe: telaEquipe, tipos: telaTipos, registro: telaRegistro }[ui.aba]()
-      : { minhas: telaMinhas, calendario: telaCalendario, disponibilidade: telaDisponibilidade }[ui.aba]();
+      ? ({ painel: telaPainel, nova: telaNova, cronograma: telaCronograma, equipe: telaEquipe }[ui.aba] || telaPainel)()
+      : ({ minhas: telaMinhas, calendario: telaCalendario }[ui.aba] || telaMinhas)();
   raiz.innerHTML = topo(p) + `<main>${conteudo}</main>`;
 }
 
@@ -161,16 +163,9 @@ function topo(p) {
           ["painel", "Painel", contarAtencao()],
           ["nova", "Nova task"],
           ["cronograma", "Cronograma"],
-          ["calendario", "Calendário"],
           ["equipe", "Equipe"],
-          ["tipos", "Tipos de task"],
-          ["registro", "Histórico"],
         ]
-      : [
-          ["minhas", "Minhas tasks", estado.tasks.filter((t) => t.responsavelId === p.id && t.status === "atribuida").length],
-          ["calendario", "Calendário"],
-          ["disponibilidade", "Disponibilidade"],
-        ];
+      : [["minhas", "Minhas tasks", estado.tasks.filter((t) => t.responsavelId === p.id && t.status === "atribuida").length]];
   return `<header class="topo"><div class="topo-dentro">
     <div class="marca">repasse<span>.</span><small>PS</small></div>
     <nav class="abas" aria-label="Seções">
@@ -243,10 +238,6 @@ function contarAtencao() {
 }
 
 function telaPainel() {
-  const abertas = estado.tasks.filter((t) => t.status !== "concluida");
-  const aguardando = abertas.filter((t) => t.status === "atribuida").length;
-  const atrasadas = abertas.filter((t) => statusDe(t) === "atrasada").length;
-  const concl = estado.tasks.filter((t) => t.status === "concluida" && t.concluidaEm >= somarDias(hoje, -7)).length;
   const atencao = itensAtencao();
 
   const atencaoHtml = atencao.length
@@ -277,27 +268,22 @@ function telaPainel() {
     .join("");
 
   const resumo = ui.resumo;
-  const resumoHtml = `<div class="cartao">
-    <div class="linha-titulo"><h2>Resumo do dia</h2>
-    <button class="botao pequeno" data-acao="resumo" ${resumo.carregando ? "disabled" : ""}>${resumo.carregando ? "Gerando…" : resumo.texto ? "Atualizar" : "Gerar com IA"}</button></div>
-    ${resumo.texto ? `<p class="resumo-ia">${esc(resumo.texto)}</p>` : `<p class="vazio">A IA lê as tasks e a carga da equipe e diz o que está em risco e o que fazer hoje.</p>`}
-    ${resumo.erro ? `<p class="nota erro">${esc(resumo.erro)}</p>` : ""}
-  </div>`;
+  const resumoHtml =
+    resumo.texto || resumo.erro
+      ? `<div class="resumo-caixa">${resumo.texto ? `<p class="resumo-ia">${esc(resumo.texto)}</p>` : ""}${resumo.erro ? `<p class="nota erro">${esc(resumo.erro)}</p>` : ""}</div>`
+      : "";
 
   return `
-  <div class="linha-titulo"><div><h1>Painel do PS</h1><p class="sub" style="margin:0">${formatarCurto(hoje)} · ${membrosAtivos().length} membros ativos</p></div>
+  <div class="linha-titulo"><div><h1>Painel do PS</h1><p class="sub" style="margin:0">${formatarCurto(hoje)}</p></div>
   <button class="botao primario" data-acao="aba" data-id="nova">+ Nova task</button></div>
   <div style="height:20px"></div>
-  <div class="kpis">
-    <div class="kpi"><b>${abertas.length}</b><span>tasks abertas</span></div>
-    <div class="kpi"><b>${aguardando}</b><span>aguardando aceite</span></div>
-    <div class="kpi ${atrasadas ? "alerta" : ""}"><b>${atrasadas}</b><span>atrasadas</span></div>
-    <div class="kpi"><b>${concl}</b><span>concluídas em 7 dias</span></div>
-  </div>
   <div class="grade grade-3-1 bloco">
     <div>
-      <div class="cartao"><h2>Precisa de atenção</h2>${atencaoHtml}</div>
-      ${resumoHtml}
+      <div class="cartao">
+        <div class="linha-titulo"><h2>Precisa de atenção</h2>
+          <button class="botao texto" data-acao="resumo" ${resumo.carregando ? "disabled" : ""}>${resumo.carregando ? "Gerando resumo…" : "Resumo com IA"}</button></div>
+        ${resumoHtml}${atencaoHtml}
+      </div>
       ${cartaoProximos()}
     </div>
     <div class="cartao"><h2>Carga da semana</h2>${carga}</div>
@@ -360,7 +346,7 @@ const EXEMPLOS = [
 function telaNova() {
   const n = ui.nova;
   const passos = ["Pedido", "Conferir", "Distribuição"];
-  const cab = `<h1>Nova task</h1><p class="sub">Escreva como você mandaria no grupo. O repasse entende o pedido, calcula quem faz e espera sua confirmação.</p>
+  const cab = `<h1>Nova task</h1><p class="sub">Escreva como mandaria no grupo. O repasse entende, calcula quem faz e espera sua confirmação.</p>
   <div class="passos">${passos
     .map((p, i) => `<div class="passo ${n.passo > i + 1 ? "feito" : n.passo === i + 1 ? "atual" : ""}"><b>${i + 1}</b>${p}</div>`)
     .join("")}</div>`;
@@ -528,7 +514,7 @@ function telaEquipe() {
     })
     .join("");
   return `<h1>Equipe do PS</h1>
-  <p class="sub">A área, as horas disponíveis na semana e as ausências são o que o repasse usa para decidir. Alterações valem na hora.</p>
+  <p class="sub">Área, horas na semana e ausências: é com isso que o repasse decide.</p>
   <div class="cartao bloco"><div class="tabela-rolagem"><table>
     <thead><tr><th>Nome</th><th>Área</th><th>Horas/semana</th><th>Ausente até</th><th>Carga atual</th><th></th></tr></thead>
     <tbody>${linhas}</tbody></table></div></div>
@@ -540,10 +526,12 @@ function telaEquipe() {
       <div><label>Horas por semana</label><input type="number" id="novo-cap" value="6" min="1" max="40"></div>
     </div>
     <div class="acoes" style="margin-top:12px"><button class="botao primario" data-acao="add-membro">Adicionar</button></div>
-  </div>`;
+  </div>
+  <details class="secao"><summary>Tipos de task <span class="prazo">quanto tempo cada uma leva, se divide e se exige a área</span></summary>${secaoTipos()}</details>
+  <details class="secao"><summary>Histórico <span class="prazo">tudo o que o repasse decidiu</span></summary>${secaoRegistro()}</details>`;
 }
 
-function telaTipos() {
+function secaoTipos() {
   const linhas = estado.tipos
     .map(
       (t) => `<tr>
@@ -554,9 +542,7 @@ function telaTipos() {
     </tr>`
     )
     .join("");
-  return `<h1>Tipos de task</h1>
-  <p class="sub">Cada PS tem as suas tasks. Aqui a gerência define quanto tempo cada uma costuma levar, se pode ser dividida entre várias pessoas e se exige alguém da área.</p>
-  <div class="cartao bloco"><div class="tabela-rolagem"><table>
+  return `<div class="cartao bloco"><div class="tabela-rolagem"><table>
     <thead><tr><th>Tipo</th><th>Horas por unidade</th><th>Divisão</th><th>Área</th></tr></thead>
     <tbody>${linhas}</tbody></table></div></div>
   <div class="cartao"><h2>Novo tipo</h2>
@@ -568,13 +554,12 @@ function telaTipos() {
   </div>`;
 }
 
-function telaRegistro() {
+function secaoRegistro() {
   const fmt = (iso) => {
     const d = new Date(iso);
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
-  return `<h1>Histórico</h1><p class="sub">Tudo o que o repasse decidiu ou que alguém fez, para ninguém precisar perguntar no grupo.</p>
-  <div class="cartao">${estado.registro.map((r) => `<div class="registro-item"><time>${fmt(r.em)}</time><div>${esc(r.texto)}</div></div>`).join("")}</div>`;
+  return `<div class="cartao">${estado.registro.map((r) => `<div class="registro-item"><time>${fmt(r.em)}</time><div>${esc(r.texto)}</div></div>`).join("")}</div>`;
 }
 
 // ---------- Membro ----------
@@ -606,37 +591,44 @@ function telaMinhas() {
   const c = cargaAberta(estado, eu.id);
   const sec = (titulo, lista, vazio) =>
     `<div class="bloco"><h2>${titulo} <span class="prazo num">${lista.length}</span></h2>${lista.length ? lista.map(cartaoTask).join("") : `<p class="vazio">${vazio}</p>`}</div>`;
-  return `<h1>Olá, ${esc(eu.nome.split(" ")[0])}</h1>
-  <p class="sub">Você está com ${horas(c)} de ${eu.capacidadeSemanal}h nesta semana. Se não puder fazer algo, aperte "Não consigo": o repasse passa para outra pessoa e avisa a gerência.</p>
+  const ausente = eu.indisponivelAte && eu.indisponivelAte >= hoje;
+  return `<div class="linha-titulo"><div><h1>Olá, ${esc(eu.nome.split(" ")[0])}</h1>
+    <p class="sub" style="margin:0">${horas(c)} de ${eu.capacidadeSemanal}h nesta semana${ausente ? ` · ausente até ${formatarCurto(eu.indisponivelAte)}` : ""}</p></div>
+    <div class="acoes">
+      <button class="botao" data-acao="abrir-ausencia">${ausente ? "Minha ausência" : "Vou me ausentar"}</button>
+      <button class="botao" data-acao="aba" data-id="calendario">Ver calendário</button>
+    </div></div>
+  <div style="height:20px"></div>
+  ${ui.ausenciaAberta ? blocoAusencia(eu) : ""}
   ${sec("Aguardando seu aceite", aguardando, "Nenhuma task nova.")}
   ${sec("Em andamento", andamento, "Nada em andamento.")}
   ${feitas.length ? sec("Concluídas", feitas, "") : ""}`;
 }
 
-function telaDisponibilidade() {
-  const eu = membro(ui.perfilId);
+function blocoAusencia(eu) {
   const conflitos = ui.conflitosAusencia
     .map((id) => estado.tasks.find((t) => t.id === id))
     .filter((t) => t && t.responsavelId === eu.id && t.status !== "concluida");
-  return `<h1>Minha disponibilidade</h1>
-  <p class="sub">Semana de prova, viagem, doença: avise aqui uma vez e o repasse para de te mandar tasks com prazo nesse período.</p>
-  <div class="cartao">
+  return `<div class="cartao bloco">
+    <h2>Vou me ausentar</h2>
+    <p class="nota" style="margin:0 0 12px">Prova, viagem, doença: avise uma vez e o repasse para de te mandar tasks com prazo nesse período.</p>
     <div class="campos">
-      <div><label>Horas que tenho nesta semana</label><input type="number" min="1" max="40" id="minha-cap" value="${eu.capacidadeSemanal}"></div>
       <div><label>Estou fora até (inclusive)</label><input type="date" id="minha-ausencia" min="${hoje}" value="${eu.indisponivelAte || ""}"></div>
+      <div><label>Horas que tenho nesta semana</label><input type="number" min="1" max="40" id="minha-cap" value="${eu.capacidadeSemanal}"></div>
     </div>
     <div class="acoes" style="margin-top:14px">
       <button class="botao primario" data-acao="salvar-disp">Salvar</button>
       ${eu.indisponivelAte ? `<button class="botao texto" data-acao="limpar-ausencia">Não vou mais me ausentar</button>` : ""}
+      <button class="botao texto" data-acao="fechar-ausencia">Fechar</button>
     </div>
-  </div>
-  ${
-    conflitos.length
-      ? `<div class="cartao"><h2>Você tem ${conflitos.length} task${conflitos.length > 1 ? "s" : ""} com prazo durante a ausência</h2>
-        ${conflitos.map((t) => `<div class="alerta-item"><p><b>${esc(t.titulo)}</b><br><small>${prazoRelativo(t.prazo, hoje)}</small></p></div>`).join("")}
-        <div class="acoes" style="margin-top:12px"><button class="botao primario" data-acao="repassar-conflitos">Repassar estas tasks</button></div></div>`
-      : ""
-  }`;
+    ${
+      conflitos.length
+        ? `<div class="sugestoes" style="margin-top:14px"><b>${conflitos.length} task${conflitos.length > 1 ? "s vencem" : " vence"} durante a ausência</b>
+          ${conflitos.map((t) => `<div class="sugestao"><span>${esc(t.titulo)}</span><small class="prazo">${prazoRelativo(t.prazo, hoje)}</small></div>`).join("")}
+          <div class="acoes" style="margin-top:8px"><button class="botao primario pequeno" data-acao="repassar-conflitos">Repassar estas tasks</button></div></div>`
+        : ""
+    }
+  </div>`;
 }
 
 // ---------- Discord ----------
@@ -767,15 +759,19 @@ function telaCronograma() {
   const semanas = [...porSemana.entries()]
     .map(([seg, lista]) => `<div class="bloco"><h3 class="prazo">Semana de ${formatarCurto(seg)}</h3><div class="cartao" style="padding:6px 18px">${lista.map(linhaEv).join("")}</div></div>`)
     .join("");
+  const vista = `<div class="segmentado" role="tablist">
+      <button class="${ui.cronoVista === "lista" ? "ativo" : ""}" data-acao="crono-vista" data-id="lista">Lista</button>
+      <button class="${ui.cronoVista === "calendario" ? "ativo" : ""}" data-acao="crono-vista" data-id="calendario">Calendário</button>
+    </div>`;
   return `<div class="linha-titulo"><div><h1>Cronograma do PS</h1>
-    <p class="sub" style="margin:0">Desafios por subárea, treinamentos síncronos e avisos. O que muda aqui pode ir direto para o Discord dos aspirantes.</p></div></div>
+    <p class="sub" style="margin:0">Desafios, treinamentos síncronos e avisos. Mudanças vão para o Discord dos aspirantes.</p></div>${vista}</div>
     <div class="acoes" style="margin:18px 0 22px">
       <button class="botao primario" data-acao="novo-evento">+ Novo item</button>
-      <button class="botao" data-acao="publicar-cronograma" ${ui.enviando ? "disabled" : ""}>Publicar cronograma no Discord</button>
-      <button class="botao" data-acao="enviar-lembretes" ${ui.enviando ? "disabled" : ""}>Lembrar o que é hoje e amanhã</button>
+      <button class="botao" data-acao="publicar-cronograma" ${ui.enviando ? "disabled" : ""}>Publicar no Discord</button>
+      <button class="botao" data-acao="enviar-lembretes" ${ui.enviando ? "disabled" : ""}>Lembrar hoje e amanhã</button>
     </div>
     ${ui.evEditando ? formEvento() : ""}
-    ${semanas || `<p class="vazio">Nenhum item no cronograma.</p>`}`;
+    ${ui.cronoVista === "calendario" ? calendarioHtml(true) : semanas || `<p class="vazio">Nenhum item no cronograma.</p>`}`;
 }
 
 function sugestoesHtml(ev) {
@@ -800,8 +796,14 @@ function sugestoesHtml(ev) {
 
 // ---------- Calendário (gerente e membros) ----------
 function telaCalendario() {
+  return `<div class="linha-titulo"><div><h1>Calendário</h1>
+    <p class="sub" style="margin:0">Cronograma do PS e os prazos das suas tasks.</p></div>
+    <button class="botao" data-acao="aba" data-id="minhas">← Minhas tasks</button></div>
+    <div style="height:20px"></div>${calendarioHtml(false)}`;
+}
+
+function calendarioHtml(gerente) {
   const eu = membro(ui.perfilId);
-  const gerente = eu.papel === "gerente";
   const [ano, mes] = ui.calMes.split("-").map(Number);
   const semanas = gradeMes(ano, mes - 1);
   const dias = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
@@ -834,9 +836,7 @@ function telaCalendario() {
         .join("")
     : `<p class="vazio">Nada neste dia.</p>`;
 
-  return `<div class="linha-titulo"><div><h1>Calendário</h1>
-    <p class="sub" style="margin:0">${gerente ? "Cronograma do PS e prazos de todas as tasks da equipe." : "Cronograma do PS e os prazos das suas tasks."}</p></div></div>
-    <div class="grade grade-3-1" style="margin-top:20px">
+  return `<div class="grade grade-3-1">
       <div class="cartao">
         <div class="linha-titulo">
           <h2 style="text-transform:capitalize">${MESES[mes - 1]} ${ano}</h2>
@@ -1162,6 +1162,7 @@ const acoes = {
   },
   "ir-evento"(el) {
     ui.aba = "cronograma";
+    ui.cronoVista = "lista";
     ui.evSugestoes = el.dataset.id;
     render();
   },
@@ -1179,6 +1180,18 @@ const acoes = {
     );
   },
 
+  "crono-vista"(el) {
+    ui.cronoVista = el.dataset.id;
+    render();
+  },
+  "abrir-ausencia"() {
+    ui.ausenciaAberta = !ui.ausenciaAberta;
+    render();
+  },
+  "fechar-ausencia"() {
+    ui.ausenciaAberta = false;
+    render();
+  },
   // Calendário
   "cal-mes"(el) {
     const n = Number(el.dataset.id);
