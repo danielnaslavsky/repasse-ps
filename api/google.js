@@ -19,6 +19,12 @@ module.exports = async function handler(req, res) {
         let j = null;
         try { j = JSON.parse(t); } catch (e) { /* não é JSON */ }
         info.script = j && j.ok ? "respondendo" : `não respondeu como esperado (HTTP ${r.status}). Confira se a URL termina em /exec e se o acesso é "Qualquer pessoa".`;
+        if (!(j && j.ok)) {
+          const titulo = (t.match(/<title>([^<]*)<\/title>/i) || [])[1] || "";
+          const corpo = t.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+          info.respostaDoGoogle = { titulo: titulo.slice(0, 120), trecho: corpo.slice(0, 300) };
+          info.urlTermina = url.slice(-12);
+        }
         if (url.includes("/dev")) info.dica = "A URL termina em /dev: use a URL de implantação, que termina em /exec.";
       } catch (e) {
         info.script = `erro ao acessar: ${e.message}`;
