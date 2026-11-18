@@ -3,7 +3,7 @@
 import { somarDias, formatarCurto, deISO, paraISO } from "./datas.js";
 import { lerArea } from "./interpretador.js";
 import { proporDistribuicao } from "./motor.js";
-import { novoId } from "./dados.js";
+import { novoId, garantirTipos } from "./dados.js";
 
 const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 const ddmm = (iso) => iso.slice(8, 10) + "/" + iso.slice(5, 7);
@@ -58,23 +58,51 @@ function lerLocal(linha) {
   return m ? m[1].trim() : "";
 }
 
-// Leitura sem IA: uma linha por item.
+const ETAPA = /din[aâ]mica|entrevista|assessment|case em grupo|painel/;
+const INTERNO = /reuni[aã]o geral|reuni[aã]o da equipe|reuni[aã]o interna|delibera|alinhamento interno/;
+
+function lerPessoas(linha) {
+  const m = linha.match(/\b(\d{1,2})\s+(?:membros|pessoas|facilitadores|avaliadores|entrevistadores)\b/i);
+  return m ? Math.min(20, Math.max(1, Number(m[1]))) : null;
+}
+
+// Linha de tabela: | Subárea | lançamento | entrega | treinamento |
+function lerLinhaTabela(linha, estado, hoje) {
+  const celulas = linha.split("|").map((c) => c.trim()).filter(Boolean);
+  if (celulas.length < 3) return [];
+  const area = lerArea(celulas[0], estado.areas);
+  if (area === "Geral") return [];
+  const datas = celulas.slice(1).map((c) => ({ c, d: lerDatas(c, hoje)[0] })).filter((x) => x.d);
+  if (datas.length < 2) return [];
+  const eventos = [{ tipo: "desafio", titulo: `Desafio de ${area}`, area, data: datas[0].d, hora: null, entrega: datas[1].d, local: "", descricao: "" }];
+  if (datas[2]) eventos.push({ tipo: "treinamento", titulo: `Treinamento síncrono de ${area}`, area, data: datas[2].d, hora: lerHora(datas[2].c), entrega: null, local: "", descricao: "" });
+  return eventos;
+}
+
+// Leitura sem IA: uma linha por item (tabelas com uma linha por subárea).
 export function interpretarPlanoLocal(texto, estado, hoje) {
   const eventos = [];
   for (const bruta of texto.split(/\n+/)) {
-    const linha = bruta.trim();
+    const linha = bruta.trim().replace(/^[-•*]\s*/, "");
     if (!linha) continue;
     const baixa = linha.toLowerCase();
+    if ((linha.match(/\|/g) || []).length >= 2) {
+      eventos.push(...lerLinhaTabela(linha, estado, hoje));
+      continue;
+    }
     const datas = lerDatas(linha, hoje);
     if (!datas.length) continue;
     const area = lerArea(linha, estado.areas);
-    if (/desafio/.test(baixa)) {
+    const tituloLivre = linha.replace(/\s+(em|no dia|dia|de)\s+\d.*$/i, "").split(/[:(]/)[0].trim().slice(0, 80);
+    if (ETAPA.test(baixa) && !/divulga|planilha|resultado/.test(baixa)) {
+      eventos.push({ tipo: "etapa", titulo: tituloLivre, area: "Geral", data: datas[0], hora: lerHora(linha), entrega: null, local: lerLocal(linha), descricao: "", pessoas: lerPessoas(linha), interno: false });
+    } else if (/desafio/.test(baixa)) {
       const entrega = datas[1] || null;
       eventos.push({ tipo: "desafio", titulo: area !== "Geral" ? `Desafio de ${area}` : linha.split(/[:,–-]/)[0].trim(), area, data: datas[0], hora: null, entrega, local: lerLocal(linha), descricao: "" });
     } else if (/treinamento|aula|workshop|capacita/.test(baixa)) {
       eventos.push({ tipo: "treinamento", titulo: area !== "Geral" ? `Treinamento síncrono de ${area}` : linha.split(/[:,–-]/)[0].trim(), area, data: datas[0], hora: lerHora(linha), entrega: null, local: lerLocal(linha), descricao: "" });
     } else {
-      eventos.push({ tipo: "aviso", titulo: linha.replace(/\s+(em|no dia|dia)\s+\d.*$/i, "").slice(0, 80), area: "Geral", data: datas[0], hora: lerHora(linha), entrega: null, local: lerLocal(linha), descricao: "" });
+      eventos.push({ tipo: "aviso", titulo: tituloLivre, area: "Geral", data: datas[0], hora: lerHora(linha), entrega: null, local: lerLocal(linha), descricao: "", interno: INTERNO.test(baixa) });
     }
   }
   return eventos;
@@ -87,18 +115,21 @@ export function validarEventosIA(lista, estado) {
   const areas = [...estado.areas, "Geral"];
   const ok = [];
   for (const e of lista.slice(0, 60)) {
-    if (!e || !["desafio", "treinamento", "aviso"].includes(e.tipo)) continue;
+    if (!e || !["desafio", "treinamento", "etapa", "aviso"].includes(e.tipo)) continue;
     if (!ISO.test(e.data || "")) continue;
     const entrega = e.tipo === "desafio" && ISO.test(e.entrega || "") && e.entrega >= e.data ? e.entrega : null;
     ok.push({
       tipo: e.tipo,
-      titulo: String(e.titulo || "").trim().slice(0, 90) || (e.tipo === "desafio" ? "Desafio" : e.tipo === "treinamento" ? "Treinamento síncrono" : "Aviso"),
+      titulo: String(e.titulo || "").trim().slice(0, 90) || ({ desafio: "Desafio", treinamento: "Treinamento síncrono", etapa: "Etapa" }[e.tipo] || "Aviso"),
       area: areas.includes(e.area) ? e.area : "Geral",
       data: e.data,
       hora: /^\d{2}:\d{2}$/.test(e.hora || "") ? e.hora : null,
       entrega,
       local: String(e.local || "").slice(0, 120),
       descricao: String(e.descricao || "").slice(0, 240),
+      pessoas: e.tipo === "etapa" && Number(e.pessoas) >= 1 ? Math.min(20, Math.round(Number(e.pessoas))) : null,
+      duracaoH: e.tipo === "etapa" && Number(e.duracaoH) > 0 ? Math.min(40, Number(e.duracaoH)) : null,
+      interno: e.tipo === "aviso" && e.interno === true,
     });
   }
   return ok;
@@ -121,7 +152,7 @@ export async function lerPlanejamento(texto, estado, hoje) {
     if (!resp.ok || dados.erro) throw new Error(dados.erro || `HTTP ${resp.status}`);
     const eventos = validarEventosIA(dados.eventos, estado);
     if (!eventos.length) throw new Error("a IA não encontrou itens");
-    return { eventos, fonte: "ia", observacoes: Array.isArray(dados.observacoes) ? dados.observacoes.slice(0, 5).map(String) : [] };
+    return { eventos, fonte: "ia", observacoes: Array.isArray(dados.observacoes) ? dados.observacoes.slice(0, 8).map(String) : [] };
   } catch (e) {
     return { eventos: local, fonte: "regras", aviso: `IA indisponível (${e.name === "AbortError" ? "demorou demais" : e.message}): lido pelas regras locais.`, observacoes: [] };
   }
@@ -144,19 +175,35 @@ export function tarefasDoEvento(ev, hoje, nAspirantes = 12) {
       { ...base, tipoId: "tp_corrigir", titulo: `Corrigir ${minusc(ev.titulo)}`, prazo: naoAntesDeHoje(somarDias(fim, 3)), quantidade: nAspirantes },
     ];
   }
-  return [{ ...base, area: "Geral", tipoId: "tp_avisos", titulo: `Comunicar: ${ev.titulo}`, prazo: naoAntesDeHoje(somarDias(ev.data, -1)), quantidade: 1 }];
+  const comunicar = { ...base, area: "Geral", tipoId: "tp_avisos", titulo: `Comunicar: ${ev.titulo}`, prazo: naoAntesDeHoje(somarDias(ev.data, -1)), quantidade: 1 };
+  if (ev.tipo === "etapa") {
+    // Dinâmica, entrevistas etc.: cada pessoa da equipe que participa recebe a sua task.
+    // Entrevistas sem detalhe no texto: 30 min por aspirante, com dois membros em cada.
+    const entrevista = /entrevista/i.test(ev.titulo);
+    const totalH = entrevista ? nAspirantes * 0.5 * 2 : null;
+    const pessoas = ev.pessoas || (entrevista ? Math.max(2, Math.ceil(totalH / 6)) : 2);
+    const horas = ev.duracaoH || (entrevista ? Math.round((totalH / pessoas) * 10) / 10 : null);
+    return [
+      comunicar,
+      { ...base, area: "Geral", tipoId: "tp_etapa", titulo: `Participar: ${ev.titulo}`, prazo: naoAntesDeHoje(ev.data), quantidade: pessoas, umPorPessoa: true, esforcoPorUnidadeH: horas },
+    ];
+  }
+  // Compromisso interno (reunião geral, deliberação): só entra no calendário da equipe.
+  if (ev.interno) return [];
+  return [comunicar];
 }
 
 // Gera e distribui todas as tasks do plano, considerando a carga que o próprio plano cria.
 export function montarPlano(estado, eventosLidos, { hoje, nAspirantes = 12 }) {
   const eventos = eventosLidos.map((e) => ({ id: e.id || novoId("e"), ...e }));
+  garantirTipos(estado);
   const sim = { ...estado, tasks: estado.tasks.slice() };
   const tarefas = [];
   const pedidos = eventos.flatMap((ev) => tarefasDoEvento(ev, hoje, nAspirantes));
   pedidos.sort((a, b) => a.prazo.localeCompare(b.prazo));
   for (const p of pedidos) {
     const tipo = estado.tipos.find((t) => t.id === p.tipoId);
-    const pedido = { ...p, esforcoPorUnidadeH: tipo ? tipo.esforcoPadraoH : 1, maxPessoas: p.maxPessoas || null };
+    const pedido = { ...p, esforcoPorUnidadeH: p.esforcoPorUnidadeH || (tipo ? tipo.esforcoPadraoH : 1), maxPessoas: p.maxPessoas || null };
     const proposta = proporDistribuicao(sim, pedido, hoje);
     const partes = proposta.partes.map((x) => ({ membroId: x.membroId, unidades: x.unidades, esforcoH: x.esforcoH, motivos: x.motivos }));
     for (const parte of partes) {

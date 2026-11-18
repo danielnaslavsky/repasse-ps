@@ -137,14 +137,15 @@ export function cancelarTasksDoEvento(ctx, ev) {
   return canceladas.length;
 }
 
-export function eventosOrdenados(estado) {
-  return (estado.eventos || []).slice().sort((a, b) => (a.data + (a.hora || "")).localeCompare(b.data + (b.hora || "")));
+// publico: só o que os aspirantes podem ver (sem compromissos internos da equipe).
+export function eventosOrdenados(estado, { publico = false } = {}) {
+  return (estado.eventos || []).filter((e) => !publico || !e.interno).slice().sort((a, b) => (a.data + (a.hora || "")).localeCompare(b.data + (b.hora || "")));
 }
 
 // Eventos que "acontecem" num dia: treinamentos e avisos na data; desafios no lançamento e na entrega.
-export function eventosDoDia(estado, iso) {
+export function eventosDoDia(estado, iso, opcoes = {}) {
   const lista = [];
-  for (const ev of eventosOrdenados(estado)) {
+  for (const ev of eventosOrdenados(estado, opcoes)) {
     if (ev.tipo === "desafio") {
       if (ev.data === iso) lista.push({ ...eventoParaDiscord(ev), titulo: `Lançamento: ${ev.titulo}`, quando: formatarCurto(iso) });
       if (ev.entrega === iso) lista.push({ titulo: `Entrega: ${ev.titulo}`, quando: formatarCurto(iso), local: ev.local || "" });

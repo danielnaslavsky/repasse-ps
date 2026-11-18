@@ -257,6 +257,8 @@ details ul { font-size: 13px; color: var(--suave); padding-left: 18px; }
 .etiqueta.ev-desafio { background: #efe7f6; color: #6a3d8f; }
 .etiqueta.ev-treinamento { background: var(--azul-claro); color: var(--azul); }
 .etiqueta.ev-aviso { background: var(--ambar-claro); color: var(--ambar); }
+.etiqueta.ev-etapa { background: #f1e6f7; color: #6d3f8f; }
+.etiqueta.interno { background: transparent; color: var(--texto-2, #6b655c); border: 1px dashed currentColor; }
 .sugestoes { grid-column: 1 / -1; background: #f8f7f3; border: 1px solid var(--linha); border-radius: 8px; padding: 12px 14px; }
 .sugestao { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px dashed var(--linha); font-size: 14px; }
 .sugestao:first-of-type { border-top: 0; }
@@ -278,6 +280,7 @@ details ul { font-size: 13px; color: var(--suave); padding-left: 18px; }
 .cal-item.entrega { background: #f3dcef; color: #8a2f74; }
 .cal-item.treinamento { background: var(--azul-claro); color: var(--azul); }
 .cal-item.aviso { background: var(--ambar-claro); color: var(--ambar); }
+.cal-item.etapa { background: #f1e6f7; color: #6d3f8f; }
 .cal-item.task { background: var(--verde-claro); color: var(--verde); }
 .cal-mais { font-size: 11px; color: var(--suave); padding-left: 4px; }
 .cal-legenda { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--suave); }
@@ -287,6 +290,7 @@ details ul { font-size: 13px; color: var(--suave); padding-left: 18px; }
 .cal-ponto.entrega { background: #b2479a; }
 .cal-ponto.treinamento { background: var(--azul); }
 .cal-ponto.aviso { background: var(--ambar); }
+.cal-ponto.etapa { background: #6d3f8f; }
 .cal-ponto.task { background: var(--verde); }
 @media (max-width: 700px) {
   .cal-dia { min-height: 54px; padding: 3px; }

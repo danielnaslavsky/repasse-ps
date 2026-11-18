@@ -41,8 +41,9 @@ async function executar() {
     resultado.acoes = R.rodarPiloto({ estado, hoje, avisar: (c) => avisos.push(c) });
 
     // 2. Lembrete do dia para os aspirantes (uma vez por dia)
-    const doDia = R.eventosDoDia(estado, hoje);
-    const deAmanha = R.eventosDoDia(estado, amanha);
+    const doDia = R.eventosDoDia(estado, hoje, { publico: true });
+    const deAmanha = R.eventosDoDia(estado, amanha, { publico: true });
+    const doDiaEquipe = R.eventosDoDia(estado, hoje);
     const lembrar = pl.lembreteDiario !== false && estado.ultimoLembrete !== hoje && (doDia.length || deAmanha.length);
 
     // 3. Resumo para a equipe
@@ -58,7 +59,7 @@ async function executar() {
         { nome: "Vencem hoje", itens: abertas.filter((t) => t.prazo === hoje).map((t) => `${t.titulo} (${nome(t.responsavelId)})`) },
         { nome: "Atrasadas", itens: abertas.filter((t) => t.prazo < hoje).map((t) => `${t.titulo} (${nome(t.responsavelId)})`) },
         { nome: "Esperando aceite", itens: abertas.filter((t) => t.status === "atribuida").map((t) => `${t.titulo} (${nome(t.responsavelId)})`) },
-        { nome: "No cronograma hoje", itens: doDia.map((e) => e.titulo) },
+        { nome: "No cronograma hoje", itens: doDiaEquipe.map((e) => e.titulo) },
       ],
     };
 
@@ -82,7 +83,7 @@ async function executar() {
     for (const c of avisos) await postar(c);
     resultado.equipe = await postar(resumo);
     if (pl.sincronizarGoogle !== false) {
-      const eventos = R.eventosOrdenados(estado).map((e) => ({ ...e, tipoRotulo: { desafio: "Desafio", treinamento: "Treinamento síncrono", aviso: "Aviso" }[e.tipo] }));
+      const eventos = R.eventosOrdenados(estado, { publico: true }).map((e) => ({ ...e, tipoRotulo: { desafio: "Desafio", treinamento: "Treinamento síncrono", etapa: "Etapa", aviso: "Aviso" }[e.tipo] }));
       resultado.planilha = await enviarPlanilha(eventos);
     }
     const resumir = (r) => (r == null ? "não enviado" : r.ok ? "ok" : r.naoConfigurado ? "não configurado" : `erro: ${r.erro}`);

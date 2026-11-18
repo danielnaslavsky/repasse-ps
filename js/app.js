@@ -732,10 +732,12 @@ function formEvento() {
       <div><label id="ev-data-rotulo">${ev.tipo === "desafio" ? "Lançamento" : "Data"}</label><input type="date" id="ev-data" value="${ev.data}"></div>
       <div><label>Horário (opcional)</label><input type="time" id="ev-hora" value="${ev.hora || ""}"></div>
       <div id="ev-entrega-campo" ${ev.tipo === "desafio" ? "" : 'style="display:none"'}><label>Entrega</label><input type="date" id="ev-entrega" value="${ev.entrega || ""}"></div>
+      <div id="ev-pessoas-campo" ${ev.tipo === "etapa" ? "" : 'style="display:none"'}><label>Membros da equipe</label><input type="number" id="ev-pessoas" min="1" max="20" value="${ev.pessoas || 2}"></div>
       <div class="campo-largo"><label>Local ou link</label><input type="text" id="ev-local" value="${esc(ev.local)}" placeholder="Ex.: canal de voz #treinamentos"></div>
       <div class="campo-largo"><label>Descrição (opcional)</label><input type="text" id="ev-descricao" value="${esc(ev.descricao)}"></div>
     </div>
-    <label class="check" style="margin-top:14px"><input type="checkbox" id="ev-avisar" checked> Avisar os aspirantes no Discord ${ui.evEditando === "novo" ? "(novo item)" : "(se data, horário ou local mudar)"}</label>
+    <label class="check" style="margin-top:14px"><input type="checkbox" id="ev-interno" ${ev.interno ? "checked" : ""}> Só para a equipe (não vai para o Discord nem para a planilha dos aspirantes)</label>
+    <label class="check" style="margin-top:6px"><input type="checkbox" id="ev-avisar" checked> Avisar os aspirantes no Discord ${ui.evEditando === "novo" ? "(novo item)" : "(se data, horário ou local mudar)"}</label>
     <div class="acoes" style="margin-top:14px">
       <button class="botao primario" data-acao="salvar-evento">Salvar</button>
       <button class="botao texto" data-acao="fechar-evento">Cancelar</button>
@@ -759,7 +761,7 @@ function telaCronograma() {
     return `<div class="evento-linha ${passado ? "passado" : ""}">
       <div class="evento-quando num">${formatarCurto(ev.data)}${ev.hora ? `<br><small>${horaBR(ev.hora)}</small>` : ""}</div>
       <div>
-        <span class="etiqueta ev-${ev.tipo}">${TIPOS_EVENTO[ev.tipo]}</span> <span class="etiqueta area">${esc(ev.area)}</span>
+        <span class="etiqueta ev-${ev.tipo}">${TIPOS_EVENTO[ev.tipo]}</span>${ev.interno ? ' <span class="etiqueta interno">só equipe</span>' : ""} <span class="etiqueta area">${esc(ev.area)}</span>
         <div class="evento-titulo">${esc(ev.titulo)}</div>
         <div class="prazo">${ev.tipo === "desafio" && ev.entrega ? `Entrega: ${formatarCurto(ev.entrega)}` : ""}${ev.local ? `${ev.tipo === "desafio" && ev.entrega ? " · " : ""}${esc(ev.local)}` : ""}</div>
       </div>
@@ -903,7 +905,7 @@ async function sincronizarGoogle({ manual = false } = {}) {
   if (!manual && !ui.google.configurado) return;
   ui.google.sincronizando = true;
   if (manual) render();
-  const eventos = eventosOrdenados().map((e) => ({ ...e, tipoRotulo: TIPOS_EVENTO[e.tipo] }));
+  const eventos = R.eventosOrdenados(estado, { publico: true }).map((e) => ({ ...e, tipoRotulo: e.tipo === "etapa" ? "Etapa" : TIPOS_EVENTO[e.tipo] }));
   try {
     const r = await fetch("/api/google", { method: "POST", headers: { "Content-Type": "application/json", "x-codigo": equipe.codigo }, body: JSON.stringify({ eventos }) });
     const d = await r.json().catch(() => ({}));
@@ -1074,7 +1076,7 @@ function telaPlano() {
         <div class="plano-cab">
           <label class="check"><input type="checkbox" data-campo="plano-incluir" data-i="${i}" ${incluir ? "checked" : ""}></label>
           <span class="num plano-data">${formatarCurto(ev.data)}${ev.hora ? ` · ${horaBR(ev.hora)}` : ""}</span>
-          <span class="etiqueta ev-${ev.tipo}">${TIPOS_EVENTO[ev.tipo]}</span>
+          <span class="etiqueta ev-${ev.tipo}">${TIPOS_EVENTO[ev.tipo]}</span>${ev.interno ? ' <span class="etiqueta interno">só equipe</span>' : ""}
           <b>${esc(ev.titulo)}</b>
           ${ev.entrega ? `<span class="prazo">entrega ${formatarCurto(ev.entrega)}</span>` : ""}
         </div>
@@ -1376,8 +1378,10 @@ const acoes = {
       entrega: v("ev-tipo") === "desafio" ? v("ev-entrega") || null : null,
       local: v("ev-local"),
       descricao: v("ev-descricao"),
+      pessoas: v("ev-tipo") === "etapa" ? Math.min(20, Math.max(1, Number(v("ev-pessoas")) || 2)) : null,
+      interno: document.getElementById("ev-interno").checked,
     };
-    const avisar = document.getElementById("ev-avisar").checked;
+    const avisar = document.getElementById("ev-avisar").checked && !dados.interno;
     if (!dados.titulo) return toast("Dê um título.");
     if (!dados.data) return toast("Defina a data.");
     if (dados.entrega && dados.entrega < dados.data) return toast("A entrega não pode ser antes do lançamento.");
@@ -1419,6 +1423,7 @@ const acoes = {
     persistir();
     render();
     sincronizarGoogle();
+    if (ev.interno) return toast("Item removido do cronograma da equipe.");
     await publicarAspirantes({ tipo: "cancelado", evento: eventoParaDiscord(ev) }, `aspirantes avisados do cancelamento de "${ev.titulo}".`);
   },
   "sugestoes-evento"(el) {
@@ -1455,7 +1460,7 @@ const acoes = {
     render();
   },
   async "publicar-cronograma"() {
-    const futuros = eventosOrdenados().filter((e) => (e.entrega || e.data) >= hoje);
+    const futuros = R.eventosOrdenados(estado, { publico: true }).filter((e) => (e.entrega || e.data) >= hoje);
     await publicarAspirantes(
       { tipo: "cronograma", titulo: "Cronograma do processo seletivo", eventos: futuros.map(eventoParaDiscord) },
       `cronograma publicado (${futuros.length} itens).`
@@ -1463,7 +1468,7 @@ const acoes = {
   },
   async "enviar-lembretes"() {
     await publicarAspirantes(
-      { tipo: "lembrete", hoje: eventosDoDia(hoje), amanha: eventosDoDia(somarDias(hoje, 1)) },
+      { tipo: "lembrete", hoje: R.eventosDoDia(estado, hoje, { publico: true }), amanha: R.eventosDoDia(estado, somarDias(hoje, 1), { publico: true }) },
       "lembretes de hoje e amanhã enviados."
     );
   },
@@ -1578,7 +1583,7 @@ const acoes = {
         v.esforcoH += p.esforcoH;
         porPessoa.set(p.membroId, v);
       }
-      const dividida = t.divisivel && t.pedido.quantidade > 1 && porPessoa.size > 1;
+      const dividida = t.divisivel && !t.pedido.umPorPessoa && t.pedido.quantidade > 1 && porPessoa.size > 1;
       const grupoId = novoId("g");
       for (const [membroId, v] of porPessoa) {
         const task = {
@@ -1618,7 +1623,7 @@ const acoes = {
     toast(`Pronto: ${novosEventos.length} itens e ${criadas} tasks criadas.`);
     sincronizarGoogle();
     if (publicar) {
-      const futuros = eventosOrdenados().filter((e) => (e.entrega || e.data) >= hoje);
+      const futuros = R.eventosOrdenados(estado, { publico: true }).filter((e) => (e.entrega || e.data) >= hoje);
       await publicarAspirantes({ tipo: "cronograma", titulo: "Cronograma do processo seletivo", eventos: futuros.map(eventoParaDiscord) }, `cronograma publicado (${futuros.length} itens).`);
     }
   },
@@ -1793,6 +1798,8 @@ const campos = {
   "ev-tipo"(el) {
     const desafio = el.value === "desafio";
     document.getElementById("ev-entrega-campo").style.display = desafio ? "" : "none";
+    const pc = document.getElementById("ev-pessoas-campo");
+    if (pc) pc.style.display = el.value === "etapa" ? "" : "none";
     document.getElementById("ev-data-rotulo").textContent = desafio ? "Lançamento" : "Data";
     return false;
   },

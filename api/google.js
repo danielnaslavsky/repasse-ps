@@ -15,7 +15,7 @@ async function enviarPlanilha(eventos) {
   const lista = (Array.isArray(eventos) ? eventos.slice(0, 200) : [])
     .filter((e) => e && /^\d{4}-\d{2}-\d{2}$/.test(e.data || ""))
     .map((e) => ({
-      tipo: ["desafio", "treinamento", "aviso"].includes(e.tipo) ? e.tipo : "aviso",
+      tipo: ["desafio", "treinamento", "etapa", "aviso"].includes(e.tipo) ? e.tipo : "aviso",
       tipoRotulo: limpo(e.tipoRotulo, 40),
       titulo: limpo(e.titulo, 120),
       area: limpo(e.area, 40),

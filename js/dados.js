@@ -10,8 +10,31 @@ export const AREAS = ["Comercial", "Marketing", "Dados", "Desenvolvimento", "Pro
 export const TIPOS_EVENTO = {
   desafio: "Desafio",
   treinamento: "Treinamento síncrono",
+  etapa: "Etapa com a equipe",
   aviso: "Aviso",
 };
+
+// Tipos de task que todo PS tem. Estados antigos ganham os que faltarem.
+export const TIPOS_PADRAO = [
+  { id: "tp_corrigir", chave: "corrigir", nome: "Corrigir desafio", esforcoPadraoH: 0.5, divisivel: true, areaObrigatoria: true },
+  { id: "tp_preparar", chave: "preparar", nome: "Preparar treinamento síncrono", esforcoPadraoH: 3, divisivel: false, areaObrigatoria: true },
+  { id: "tp_conduzir", chave: "conduzir", nome: "Conduzir treinamento síncrono", esforcoPadraoH: 2, divisivel: false, areaObrigatoria: true },
+  { id: "tp_duvidas", chave: "duvidas", nome: "Tirar dúvidas dos aspirantes", esforcoPadraoH: 0.25, divisivel: true, areaObrigatoria: false },
+  { id: "tp_etapa", chave: "etapa", nome: "Participar de etapa (dinâmica, entrevista)", esforcoPadraoH: 3, divisivel: true, areaObrigatoria: false },
+  { id: "tp_consolidar", chave: "consolidar", nome: "Consolidar notas", esforcoPadraoH: 2, divisivel: false, areaObrigatoria: false, areaPadrao: "Gente e Gestão" },
+  { id: "tp_avisos", chave: "avisos", nome: "Comunicar aspirantes", esforcoPadraoH: 1, divisivel: false, areaObrigatoria: false, areaPadrao: "Marketing" },
+  { id: "tp_outra", chave: "outra", nome: "Outra", esforcoPadraoH: 1, divisivel: false, areaObrigatoria: false },
+];
+
+export function garantirTipos(estado) {
+  if (!estado || !Array.isArray(estado.tipos)) return estado;
+  for (const t of TIPOS_PADRAO) {
+    if (estado.tipos.some((x) => x.id === t.id)) continue;
+    const iOutra = estado.tipos.findIndex((x) => x.id === "tp_outra");
+    estado.tipos.splice(iOutra < 0 ? estado.tipos.length : iOutra, 0, { ...t });
+  }
+  return estado;
+}
 
 export function novoId(prefixo) {
   return `${prefixo}_${Math.random().toString(36).slice(2, 9)}`;
@@ -20,15 +43,7 @@ export function novoId(prefixo) {
 export function dadosDemonstracao(hoje = hojeISO()) {
   const d = (n) => somarDias(hoje, n);
 
-  const tipos = [
-    { id: "tp_corrigir", chave: "corrigir", nome: "Corrigir desafio", esforcoPadraoH: 0.5, divisivel: true, areaObrigatoria: true },
-    { id: "tp_preparar", chave: "preparar", nome: "Preparar treinamento síncrono", esforcoPadraoH: 3, divisivel: false, areaObrigatoria: true },
-    { id: "tp_conduzir", chave: "conduzir", nome: "Conduzir treinamento síncrono", esforcoPadraoH: 2, divisivel: false, areaObrigatoria: true },
-    { id: "tp_duvidas", chave: "duvidas", nome: "Tirar dúvidas dos aspirantes", esforcoPadraoH: 0.25, divisivel: true, areaObrigatoria: false },
-    { id: "tp_consolidar", chave: "consolidar", nome: "Consolidar notas", esforcoPadraoH: 2, divisivel: false, areaObrigatoria: false, areaPadrao: "Gente e Gestão" },
-    { id: "tp_avisos", chave: "avisos", nome: "Comunicar aspirantes", esforcoPadraoH: 1, divisivel: false, areaObrigatoria: false, areaPadrao: "Marketing" },
-    { id: "tp_outra", chave: "outra", nome: "Outra", esforcoPadraoH: 1, divisivel: false, areaObrigatoria: false },
-  ];
+  const tipos = TIPOS_PADRAO.map((t) => ({ ...t }));
 
   const membros = [
     { id: "m_marina", nome: "Marina Costa", papel: "gerente", area: "Gente e Gestão", capacidadeSemanal: 10, indisponivelAte: null, ativo: true },
@@ -107,7 +122,7 @@ export function carregar() {
       const estado = JSON.parse(bruto);
       if (estado && estado.versao === VERSAO) {
         if (!estado.piloto) estado.piloto = pilotoPadrao();
-        return estado;
+        return garantirTipos(estado);
       }
     }
   } catch (e) {

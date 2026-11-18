@@ -149,7 +149,9 @@ export function proporDistribuicao(estado, pedido, hoje) {
   const tipo = estado.tipos.find((t) => t.id === pedido.tipoId);
   const quantidade = Math.max(1, Math.floor(pedido.quantidade || 1));
   const esforcoUnidade = Number(pedido.esforcoPorUnidadeH) || (tipo ? tipo.esforcoPadraoH : 1);
-  const divisivel = tipo ? tipo.divisivel : false;
+  // umPorPessoa: cada unidade vai para uma pessoa diferente (ex.: 6 facilitadores da dinâmica).
+  const umPorPessoa = !!pedido.umPorPessoa;
+  const divisivel = umPorPessoa || (tipo ? tipo.divisivel : false);
   const base = {
     titulo: pedido.titulo,
     tipoId: pedido.tipoId,
@@ -184,7 +186,8 @@ export function proporDistribuicao(estado, pedido, hoje) {
     inelegiveisFinal = inelegiveis;
     const escolhidos = Object.keys(unidadesPor);
     let candidatos = elegiveis;
-    if (escolhidos.length >= maxPessoas) {
+    if (umPorPessoa) candidatos = elegiveis.filter((e) => !escolhidos.includes(e.membroId));
+    else if (escolhidos.length >= maxPessoas) {
       candidatos = elegiveis.filter((e) => escolhidos.includes(e.membroId));
     }
     if (!candidatos.length) break;

@@ -42,7 +42,7 @@ Pedido do gerente: """${String(texto).slice(0, 1000)}"""`;
 }
 
 function promptPlanejar({ texto, hoje, areas }) {
-  return `Você organiza o processo seletivo (PS) de uma empresa júnior. O PS tem desafios por subárea (com data de lançamento e de entrega) e treinamentos síncronos (com data e horário), além de avisos (resultado, reuniões gerais etc.).
+  return `Você organiza o processo seletivo (PS) de uma empresa júnior. O PS tem desafios por subárea (com data de lançamento e de entrega), treinamentos síncronos (com data e horário), etapas em que membros da equipe trabalham com os aspirantes (dinâmica em grupo, entrevistas) e avisos (abertura, divulgações, resultado etc.).
 Leia o planejamento abaixo e extraia TODOS os itens do cronograma.
 
 Hoje é ${hoje}. Calendário de referência (datas sem ano são deste ano, ou do próximo se já passaram há muito tempo):
@@ -51,17 +51,23 @@ ${calendario(hoje, 45)}
 Subáreas possíveis: ${JSON.stringify([...areas, "Geral"])}. Use "Geral" quando o item não for de uma subárea.
 
 Regras:
-- "tipo" é "desafio", "treinamento" ou "aviso".
+- "tipo" é "desafio", "treinamento", "etapa" ou "aviso".
+- "etapa" é dinâmica em grupo, entrevistas, case em grupo ou outra atividade em que membros da equipe avaliam ou conduzem aspirantes. Divulgações, envio de planilhas e resultados são "aviso".
+- "pessoas" (só para etapa): quantos membros da equipe participam no total, se o texto disser ou der para calcular; senão null.
+- "duracaoH" (só para etapa): horas de trabalho de CADA membro, se der para estimar pelo texto (ex.: 40 entrevistas de 30 min com 2 membros cada, divididas entre 8 membros = 5); senão null.
+- "interno" é true para compromissos só da equipe, que os aspirantes não devem ver (reunião geral, deliberação, alinhamento); senão false. Restrições como "não marcar nada no dia X" também são internas.
 - "data" é AAAA-MM-DD: lançamento (desafio), dia do treinamento ou do aviso.
 - "entrega" é AAAA-MM-DD só para desafios; null se não houver.
 - "hora" é HH:MM (24h) ou null.
 - "titulo" curto, ex.: "Desafio de Dados", "Treinamento síncrono de Marketing", "Resultado final".
 - "local" é o canal, sala ou link, se houver; senão "".
 - Se um item citar várias subáreas ("desafios de Dados e Marketing"), crie um item para cada uma.
+- Uma etapa que dura vários dias ("de 14/12 a 16/12") vira um único item, com a data do primeiro dia e o período na descrição.
 - Não invente itens nem datas. Se algo estiver ambíguo, coloque uma frase curta em "observacoes".
+- Se o texto disser quem faz uma tarefa ("Rafael prepara o case de Dados"), escreva isso em "observacoes" para a gerência ajustar o responsável na prévia.
 
 Responda apenas com JSON:
-{"eventos": [{"tipo": string, "titulo": string, "area": string, "data": string, "entrega": string|null, "hora": string|null, "local": string, "descricao": string}], "observacoes": [string]}
+{"eventos": [{"tipo": string, "titulo": string, "area": string, "data": string, "entrega": string|null, "hora": string|null, "local": string, "descricao": string, "pessoas": number|null, "duracaoH": number|null, "interno": boolean}], "observacoes": [string]}
 
 Planejamento:
 """${String(texto).slice(0, 8000)}"""`;
