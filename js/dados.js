@@ -97,7 +97,7 @@ export function dadosDemonstracao(hoje = hojeISO()) {
 }
 
 export function pilotoPadrao() {
-  return { aceite24h: true, atrasadas: "avisar", seguirCronograma: true, sincronizarGoogle: true };
+  return { aceite24h: true, atrasadas: "avisar", seguirCronograma: true, sincronizarGoogle: true, lembreteDiario: true };
 }
 
 export function carregar() {

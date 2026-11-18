@@ -31,6 +31,11 @@ A gerência cola o texto de como o PS vai ser estruturado (ou abre um .txt) e in
 
 Sem IA disponível, regras locais leem um item por linha ("Desafio de Dados: lançamento 23/11, entrega 27/11").
 
+## Modo demonstração e modo equipe
+
+- **Demonstração** (o link puro do site): dados fictícios salvos no navegador de cada pessoa. Cada avaliador explora a sua cópia, e "Restaurar dados de demonstração" volta ao início.
+- **Equipe** (`/?c=CÓDIGO`): os dados ficam no servidor (Upstash Redis) e são os mesmos para todos. A gerência entra com o código definido em `PS_CODIGO_GERENTE`; cada membro recebe um link próprio, que abre direto nas suas tasks (Equipe → Links de acesso da equipe). "Novo link" invalida o anterior. As gravações usam controle de versão: se duas pessoas mexem ao mesmo tempo, ninguém sobrescreve o outro sem perceber.
+
 ## Piloto automático
 
 Regras que rodam sozinhas, sem a gerência clicar (ao abrir o site e a cada minuto com ele aberto). Cada uma pode ser ligada ou desligada no painel, que também mostra o que o piloto fez:
@@ -39,6 +44,7 @@ Regras que rodam sozinhas, sem a gerência clicar (ao abrir o site e a cada minu
 - **Task atrasada:** avisa a equipe no Discord, ou repassa sozinha com prazo para o dia seguinte.
 - **Tasks acompanham o cronograma:** se um treinamento muda de data, os prazos de preparar e conduzir mudam junto, e quem estiver indisponível na nova data é trocado. Se um item é cancelado, as tasks dele são canceladas.
 - **Planilha dos aspirantes:** a cada mudança no cronograma, a planilha do Google Sheets é atualizada.
+- **Rotina diária no servidor (8h):** no modo equipe, a Vercel roda o piloto mesmo com o site fechado, manda aos aspirantes o lembrete do dia, manda à equipe o resumo (vence hoje, atrasadas, esperando aceite) e atualiza a planilha. A gerência pode disparar a rotina na hora pelo painel.
 
 ## Planilha do Google Sheets (e Google Agenda)
 
@@ -99,6 +105,11 @@ js/datas.js           utilitários de data
 api/ia.js             função serverless que chama o Gemini
 api/discord.js        função serverless que publica no Discord
 api/google.js         função serverless que atualiza a planilha do Google
+api/estado.js         estado compartilhado da equipe (modo equipe)
+api/_armazem.js       acesso ao Upstash Redis com gravação atômica por versão
+api/cron.js           rotina diária do servidor (piloto, lembretes, resumo, planilha)
+js/regras.js          regras de negócio usadas no navegador e no servidor
+js/sincronia.js       modo equipe no navegador (links, salvar, buscar mudanças)
 google/apps-script.gs script da planilha (lista, calendário e Google Agenda opcional)
 testes/               testes automatizados
 ```
@@ -120,6 +131,8 @@ node testes/plano.test.mjs
 node testes/api.test.cjs
 node testes/discord.test.cjs
 node testes/google.test.cjs
+node testes/estado.test.cjs
+node testes/cron.test.cjs
 ```
 
 ## Publicar na Vercel
@@ -130,6 +143,13 @@ node testes/google.test.cjs
 4. Faça um novo deploy para a variável valer.
 5. Para conferir, abra `/api/ia?diagnostico=1`: deve aparecer `"ok": true`.
 
+### Modo equipe (dados compartilhados)
+
+1. Na Vercel, aba **Storage** → **Create Database** → **Upstash for Redis** (plano gratuito) → conecte ao projeto. As variáveis do banco são criadas sozinhas.
+2. Em *Environment Variables*, crie `PS_CODIGO_GERENTE` (o código da gerência, ex.: `gerencia-ps-2026`) e `CRON_SECRET` (qualquer texto longo; a Vercel usa para chamar a rotina diária).
+3. Redeploy. Para conferir: `/api/estado?diagnostico=1`.
+4. Abra `/?c=SEU_CÓDIGO_DA_GERÊNCIA`, escolha como começar e mande a cada membro o link dele.
+
 ### Discord
 
 1. No servidor do PS, abra as configurações do canal dos aspirantes → **Integrações** → **Webhooks** → **Novo webhook** → **Copiar URL do webhook**.
@@ -139,6 +159,6 @@ node testes/google.test.cjs
 
 ## Limitações e próximos passos
 
-- Os dados ficam no navegador de cada pessoa. Para uso real pela equipe, o próximo passo é um banco compartilhado (por exemplo, Supabase) com login.
-- O piloto automático roda no navegador de quem está com o site aberto. Rodar 24h no servidor (lembretes num horário fixo, cobranças de madrugada) e avisar cada membro direto no Discord, com botões de aceitar e repassar, exigem um banco compartilhado e um bot do Discord: é o próximo passo.
+- No modo equipe, o acesso é por link com código (sem senha). Quem tem o link de um membro age como ele; por isso os links são individuais e revogáveis. Login com conta Google é um próximo passo.
+- A rotina do servidor roda uma vez por dia (limite do plano gratuito da Vercel). Avisar cada membro direto no Discord, com botões de aceitar e repassar, exige um bot do Discord: é o próximo passo.
 - Os pesos do motor são fixos. Uma versão futura deixaria a gerência ajustá-los e aprenderia com as trocas manuais que ela faz.

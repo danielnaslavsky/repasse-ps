@@ -108,6 +108,21 @@ function montar(corpo) {
           },
         ],
       };
+    case "resumo-equipe":
+      return {
+        canal: "equipe",
+        embeds: [
+          {
+            title: limpo(corpo.titulo || "Bom dia, equipe do PS", 120),
+            fields: (Array.isArray(corpo.secoes) ? corpo.secoes : []).slice(0, 5).map((sec) => ({
+              name: limpo(sec.nome, 100),
+              value: (Array.isArray(sec.itens) && sec.itens.length ? sec.itens.slice(0, 15).map((i) => `• ${limpo(i, 150)}`).join("\n") : "Nada.").slice(0, 1000),
+            })),
+            color: CORES.equipe,
+            footer: rodape,
+          },
+        ],
+      };
     case "repasse":
       return {
         canal: "equipe",
@@ -120,6 +135,28 @@ function montar(corpo) {
 
 function webhookDe(canal) {
   return canal === "equipe" ? process.env.DISCORD_WEBHOOK_EQUIPE : process.env.DISCORD_WEBHOOK_ASPIRANTES;
+}
+
+// Monta e publica uma mensagem. Devolve { ok, status, erro, naoConfigurado, canal }.
+async function postar(corpo) {
+  const mensagem = montar(corpo);
+  if (!mensagem) return { ok: false, status: 400, erro: "Tipo de mensagem desconhecido" };
+  const url = webhookDe(mensagem.canal);
+  if (!url) return { ok: false, status: 503, naoConfigurado: true, erro: `Webhook do canal "${mensagem.canal}" não configurado na Vercel` };
+  try {
+    const resp = await fetch(`${url}${url.includes("?") ? "&" : "?"}wait=true`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "repasse · PS", content: mensagem.content, embeds: mensagem.embeds, allowed_mentions: { parse: [] } }),
+    });
+    if (!resp.ok) {
+      const t = await resp.text();
+      return { ok: false, status: 502, erro: `Discord respondeu ${resp.status}: ${t.slice(0, 200)}` };
+    }
+    return { ok: true, status: 200, canal: mensagem.canal };
+  } catch (e) {
+    return { ok: false, status: 500, erro: e.message };
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -145,43 +182,14 @@ module.exports = async function handler(req, res) {
     }
   }
   corpo = corpo || {};
-
   if (process.env.DISCORD_PIN && corpo.pin !== process.env.DISCORD_PIN) {
     res.status(401).json({ erro: "Código da gerência inválido" });
     return;
   }
-
-  const mensagem = montar(corpo);
-  if (!mensagem) {
-    res.status(400).json({ erro: "Tipo de mensagem desconhecido" });
-    return;
-  }
-  const url = webhookDe(mensagem.canal);
-  if (!url) {
-    res.status(503).json({ erro: `Webhook do canal "${mensagem.canal}" não configurado na Vercel`, naoConfigurado: true });
-    return;
-  }
-
-  try {
-    const resp = await fetch(`${url}${url.includes("?") ? "&" : "?"}wait=true`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: "repasse · PS",
-        content: mensagem.content,
-        embeds: mensagem.embeds,
-        allowed_mentions: { parse: [] },
-      }),
-    });
-    if (!resp.ok) {
-      const t = await resp.text();
-      res.status(502).json({ erro: `Discord respondeu ${resp.status}: ${t.slice(0, 200)}` });
-      return;
-    }
-    res.status(200).json({ ok: true, canal: mensagem.canal });
-  } catch (e) {
-    res.status(500).json({ erro: e.message });
-  }
+  const r = await postar(corpo);
+  if (r.ok) res.status(200).json({ ok: true, canal: r.canal });
+  else res.status(r.status).json({ erro: r.erro, naoConfigurado: !!r.naoConfigurado });
 };
 
 module.exports.montar = montar;
+module.exports.postar = postar;

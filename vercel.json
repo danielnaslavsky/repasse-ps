@@ -1,5 +1,7 @@
 {
   "functions": {
-    "api/ia.js": { "maxDuration": 30 }
-  }
+    "api/ia.js": { "maxDuration": 30 },
+    "api/cron.js": { "maxDuration": 60, "includeFiles": "js/**" }
+  },
+  "crons": [{ "path": "/api/cron", "schedule": "0 11 * * *" }]
 }

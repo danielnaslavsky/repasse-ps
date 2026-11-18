@@ -929,6 +929,12 @@ function cartaoPiloto() {
       </select></div>
     ${chk("seguirCronograma", "Tasks acompanham mudanças do cronograma", pl.seguirCronograma)}
     ${chk("sincronizarGoogle", `Atualizar a planilha dos aspirantes${ui.google.configurado ? "" : " (configure na Vercel)"}`, pl.sincronizarGoogle)}
+    ${chk("lembreteDiario", "Todo dia às 8h: lembrete aos aspirantes e resumo à equipe no Discord", pl.lembreteDiario !== false)}
+    ${
+      equipe.ativo
+        ? `<p class="nota">Rotina do servidor: ${estado.ultimaRotina ? `última execução em ${new Date(estado.ultimaRotina.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "ainda não rodou"}. <button class="botao texto" data-acao="rodar-rotina" ${ui.rodandoRotina ? "disabled" : ""}>${ui.rodandoRotina ? "rodando…" : "Rodar agora"}</button></p>`
+        : `<p class="nota">No modo equipe, essas regras também rodam no servidor todo dia às 8h, mesmo com o site fechado.</p>`
+    }
     ${sinc ? `<p class="nota ${sinc.erro ? "erro" : ""}">Planilha: ${sinc.erro ? esc(sinc.erro) : `atualizada em ${new Date(sinc.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}</p>` : ""}
     <h3 class="prazo" style="margin-top:14px">O que ele fez</h3>
     ${ultimas.length ? ultimas.map((r) => `<p class="piloto-acao">${esc(r.texto.slice(PREFIXO_PILOTO.length))}</p>`).join("") : `<p class="vazio">Nada ainda.</p>`}
@@ -1606,6 +1612,22 @@ const acoes = {
       const futuros = eventosOrdenados().filter((e) => (e.entrega || e.data) >= hoje);
       await publicarAspirantes({ tipo: "cronograma", titulo: "Cronograma do processo seletivo", eventos: futuros.map(eventoParaDiscord) }, `cronograma publicado (${futuros.length} itens).`);
     }
+  },
+  async "rodar-rotina"() {
+    ui.rodandoRotina = true;
+    render();
+    try {
+      const r = await fetch(`/api/cron?codigo=${encodeURIComponent(equipe.codigo)}`, { cache: "no-store" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erro || `HTTP ${r.status}`);
+      equipe.versao = -1; // força recarregar o estado gravado pelo servidor
+      await buscarMudancas();
+      toast(`Rotina concluída: ${d.acoes ? d.acoes.length : 0} ação(ões). Aspirantes: ${d.aspirantes}. Equipe: ${d.equipe}. Planilha: ${d.planilha}.`);
+    } catch (e) {
+      toast(`A rotina não rodou: ${e.message}`);
+    }
+    ui.rodandoRotina = false;
+    render();
   },
   "sincronizar-google"() {
     sincronizarGoogle({ manual: true });
