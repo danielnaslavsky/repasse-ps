@@ -5,6 +5,28 @@
 //   GOOGLE_SHEET_URL     opcional: link da planilha, para o site mostrar o botão "Abrir planilha"
 
 module.exports = async function handler(req, res) {
+  if (req.method === "GET" && req.query && req.query.diagnostico) {
+    const url = process.env.GOOGLE_SCRIPT_URL;
+    const info = {
+      GOOGLE_SCRIPT_URL: url ? "definida" : "FALTANDO",
+      GOOGLE_SCRIPT_TOKEN: process.env.GOOGLE_SCRIPT_TOKEN ? "definida" : "FALTANDO",
+      GOOGLE_SHEET_URL: process.env.GOOGLE_SHEET_URL ? "definida" : "opcional, não definida",
+    };
+    if (url) {
+      try {
+        const r = await fetch(url, { redirect: "follow" });
+        const t = await r.text();
+        let j = null;
+        try { j = JSON.parse(t); } catch (e) { /* não é JSON */ }
+        info.script = j && j.ok ? "respondendo" : `não respondeu como esperado (HTTP ${r.status}). Confira se a URL termina em /exec e se o acesso é "Qualquer pessoa".`;
+        if (url.includes("/dev")) info.dica = "A URL termina em /dev: use a URL de implantação, que termina em /exec.";
+      } catch (e) {
+        info.script = `erro ao acessar: ${e.message}`;
+      }
+    }
+    res.status(200).json(info);
+    return;
+  }
   if (req.method === "GET") {
     res.status(200).json({
       configurado: !!(process.env.GOOGLE_SCRIPT_URL && process.env.GOOGLE_SCRIPT_TOKEN),
