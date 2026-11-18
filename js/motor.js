@@ -1,7 +1,7 @@
 // Motor de atribuição: decide quem faz cada task e explica por quê.
 // Funções puras: recebem o estado e devolvem uma proposta, sem alterar nada.
 
-import { diferencaDias, somarDias } from "./datas.js";
+import { diferencaDias, somarDias, deISO } from "./datas.js";
 
 export const PESOS = {
   area: 30, // pessoa da mesma área da task
@@ -18,6 +18,20 @@ export function tasksAbertas(estado) {
 export function cargaAberta(estado, membroId) {
   return tasksAbertas(estado)
     .filter((t) => t.responsavelId === membroId)
+    .reduce((soma, t) => soma + t.esforcoH, 0);
+}
+
+// Segunda-feira da semana de uma data.
+export function inicioSemana(iso) {
+  const dia = (deISO(iso).getDay() + 6) % 7;
+  return somarDias(iso, -dia);
+}
+
+// Horas que a pessoa já tem na semana de um prazo. Task atrasada conta na semana atual.
+export function cargaSemana(estado, membroId, prazo, hoje, ignorarId) {
+  const alvo = inicioSemana(prazo < hoje ? hoje : prazo);
+  return tasksAbertas(estado)
+    .filter((t) => t.id !== ignorarId && t.responsavelId === membroId && inicioSemana(t.prazo < hoje ? hoje : t.prazo) === alvo)
     .reduce((soma, t) => soma + t.esforcoH, 0);
 }
 
@@ -54,7 +68,7 @@ export function motivoInelegivel(membro, task, tipo, hoje) {
 
 // Pontua uma pessoa para uma task. cargaExtra simula horas já propostas nesta mesma rodada.
 export function pontuar(estado, membro, task, hoje, cargaExtra = 0) {
-  const carga = cargaAberta(estado, membro.id) + cargaExtra;
+  const carga = cargaSemana(estado, membro.id, task.prazo, hoje) + cargaExtra;
   const cap = membro.capacidadeSemanal;
   const folgaDepois = cap - carga - task.esforcoH;
   const motivos = [];
@@ -72,9 +86,9 @@ export function pontuar(estado, membro, task, hoje, cargaExtra = 0) {
   const proporcaoLivre = Math.max(0, Math.min(1, folgaDepois / cap));
   partes.folga = PESOS.folga * proporcaoLivre;
   if (folgaDepois < 0) {
-    motivos.push(`ficaria ${h(-folgaDepois)} acima da capacidade`);
+    motivos.push(`ficaria ${h(-folgaDepois)} acima da capacidade da semana`);
   } else {
-    motivos.push(`fica com ${h(folgaDepois)} livres de ${h(cap)}`);
+    motivos.push(`fica com ${h(folgaDepois)} livres de ${h(cap)} na semana`);
   }
 
   // Prazos colados

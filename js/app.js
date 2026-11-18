@@ -2,7 +2,8 @@
 
 import { carregar, salvar, restaurar, registrar, novoId, TIPOS_EVENTO } from "./dados.js";
 import { hojeISO, formatarCurto, prazoRelativo, diferencaDias, somarDias } from "./datas.js";
-import { proporDistribuicao, redistribuir, pontuar, cargaAberta, explicar } from "./motor.js";
+import { proporDistribuicao, redistribuir, pontuar, cargaSemana, explicar } from "./motor.js";
+import { montarPlano, exemploPlanejamento, lerPlanejamento, tarefasDoEvento, resumoPlano } from "./planejador.js";
 import { interpretar, interpretarLocal, resumirComIA } from "./interpretador.js";
 import { enviarDiscord, eventoParaDiscord, quandoEvento, resumoDatas, horaBR } from "./discord.js";
 import { gradeMes, itensDoDia, MESES } from "./calendario.js";
@@ -38,6 +39,7 @@ const ui = {
   enviando: false,
   cronoVista: "lista", // "lista" ou "calendario"
   ausenciaAberta: false,
+  plano: null, // { passo: "texto" | "lendo" | "revisao", texto, nAspirantes, substituir, publicar, lido, resultado }
 };
 
 function novaVazia() {
@@ -61,6 +63,7 @@ const membro = (id) => estado.membros.find((m) => m.id === id);
 const tipo = (id) => estado.tipos.find((t) => t.id === id);
 const primeiroNome = (id) => (membro(id) ? membro(id).nome.split(" ")[0] : "—");
 const horas = (h) => `${String(Math.round(h * 10) / 10).replace(".", ",")}h`;
+const cargaAtual = (id) => cargaSemana(estado, id, hoje, hoje);
 const membrosAtivos = () => estado.membros.filter((m) => m.papel === "membro" && m.ativo);
 
 function statusDe(t) {
@@ -228,7 +231,7 @@ function itensAtencao() {
     else if (s === "atrasada") itens.push({ t, tipo: "atrasada" });
   }
   for (const m of membrosAtivos()) {
-    const c = cargaAberta(estado, m.id);
+    const c = cargaAtual(m.id);
     if (c > m.capacidadeSemanal) itens.push({ m, c, tipo: "sobrecarga" });
   }
   return itens;
@@ -256,7 +259,7 @@ function telaPainel() {
     : `<p class="vazio">Nada atrasado, ninguém acima da capacidade.</p>`;
 
   const carga = membrosAtivos()
-    .map((m) => ({ m, c: cargaAberta(estado, m.id) }))
+    .map((m) => ({ m, c: cargaAtual(m.id) }))
     .sort((a, b) => b.c / b.m.capacidadeSemanal - a.c / a.m.capacidadeSemanal)
     .map(
       ({ m, c }) => `<div class="carga">
@@ -275,7 +278,8 @@ function telaPainel() {
 
   return `
   <div class="linha-titulo"><div><h1>Painel do PS</h1><p class="sub" style="margin:0">${formatarCurto(hoje)}</p></div>
-  <button class="botao primario" data-acao="aba" data-id="nova">+ Nova task</button></div>
+  <div class="acoes"><button class="botao" data-acao="abrir-plano">Montar o PS a partir do planejamento</button>
+  <button class="botao primario" data-acao="aba" data-id="nova">+ Nova task</button></div></div>
   <div style="height:20px"></div>
   <div class="grade grade-3-1 bloco">
     <div>
@@ -500,7 +504,7 @@ function telaEquipe() {
   const linhas = estado.membros
     .filter((m) => m.papel === "membro")
     .map((m) => {
-      const c = cargaAberta(estado, m.id);
+      const c = cargaAtual(m.id);
       return `<tr>
         <td><b>${esc(m.nome)}</b></td>
         <td><select data-campo="membro" data-id="${m.id}" data-chave="area">${estado.areas
@@ -588,7 +592,7 @@ function telaMinhas() {
   const aguardando = minhas.filter((t) => t.status === "atribuida");
   const andamento = minhas.filter((t) => t.status === "em_andamento");
   const feitas = minhas.filter((t) => t.status === "concluida").slice(-5).reverse();
-  const c = cargaAberta(estado, eu.id);
+  const c = cargaAtual(eu.id);
   const sec = (titulo, lista, vazio) =>
     `<div class="bloco"><h2>${titulo} <span class="prazo num">${lista.length}</span></h2>${lista.length ? lista.map(cartaoTask).join("") : `<p class="vazio">${vazio}</p>`}</div>`;
   const ausente = eu.indisponivelAte && eu.indisponivelAte >= hoje;
@@ -682,22 +686,7 @@ function cartaoProximos() {
 
 // ---------- Gerente: cronograma ----------
 function sugestoesDoEvento(ev) {
-  const antesDe = (iso, n) => {
-    const d = somarDias(iso, -n);
-    return d < hoje ? hoje : d;
-  };
-  const base = { eventoId: ev.id, area: ev.area };
-  if (ev.tipo === "treinamento")
-    return [
-      { ...base, tipoId: "tp_preparar", titulo: `Preparar ${ev.titulo.charAt(0).toLowerCase()}${ev.titulo.slice(1)}`, prazo: antesDe(ev.data, 1), quantidade: 1 },
-      { ...base, tipoId: "tp_conduzir", titulo: `Conduzir ${ev.titulo.charAt(0).toLowerCase()}${ev.titulo.slice(1)}`, prazo: ev.data < hoje ? hoje : ev.data, quantidade: 1 },
-    ];
-  if (ev.tipo === "desafio")
-    return [
-      { ...base, area: "Geral", tipoId: "tp_duvidas", titulo: `Tirar dúvidas do ${ev.titulo.charAt(0).toLowerCase()}${ev.titulo.slice(1)}`, prazo: (ev.entrega || ev.data) < hoje ? hoje : ev.entrega || ev.data, quantidade: 10 },
-      { ...base, tipoId: "tp_corrigir", titulo: `Corrigir ${ev.titulo.charAt(0).toLowerCase()}${ev.titulo.slice(1)}`, prazo: somarDias(ev.entrega || ev.data, 3) < hoje ? hoje : somarDias(ev.entrega || ev.data, 3), quantidade: 12 },
-    ];
-  return [{ ...base, area: "Geral", tipoId: "tp_avisos", titulo: `Comunicar: ${ev.titulo}`, prazo: ev.data < hoje ? hoje : ev.data, quantidade: 1 }];
+  return tarefasDoEvento(ev, hoje, 12);
 }
 
 function formEvento() {
@@ -730,6 +719,7 @@ function formEvento() {
 }
 
 function telaCronograma() {
+  if (ui.plano) return telaPlano();
   const evs = eventosOrdenados();
   const porSemana = new Map();
   for (const ev of evs) {
@@ -766,7 +756,8 @@ function telaCronograma() {
   return `<div class="linha-titulo"><div><h1>Cronograma do PS</h1>
     <p class="sub" style="margin:0">Desafios, treinamentos síncronos e avisos. Mudanças vão para o Discord dos aspirantes.</p></div>${vista}</div>
     <div class="acoes" style="margin:18px 0 22px">
-      <button class="botao primario" data-acao="novo-evento">+ Novo item</button>
+      <button class="botao primario" data-acao="abrir-plano">Montar a partir do planejamento</button>
+      <button class="botao" data-acao="novo-evento">+ Novo item</button>
       <button class="botao" data-acao="publicar-cronograma" ${ui.enviando ? "disabled" : ""}>Publicar no Discord</button>
       <button class="botao" data-acao="enviar-lembretes" ${ui.enviando ? "disabled" : ""}>Lembrar hoje e amanhã</button>
     </div>
@@ -851,6 +842,116 @@ function calendarioHtml(gerente) {
       </div>
       <div class="cartao"><h2>${formatarCurto(ui.calDia)}</h2>${detalhe}</div>
     </div>`;
+}
+
+// ---------- Gerente: montar o PS a partir do planejamento ----------
+function telaPlano() {
+  const pl = ui.plano;
+  const cab = `<div class="linha-titulo"><div><h1>Montar o PS a partir do planejamento</h1>
+    <p class="sub" style="margin:0">Cole como o PS vai ser estruturado. O repasse monta o cronograma, cria as tasks de cada item e distribui tudo pela equipe.</p></div>
+    <button class="botao texto" data-acao="fechar-plano">Cancelar</button></div><div style="height:20px"></div>`;
+  if (pl.passo !== "revisao") {
+    const lendo = pl.passo === "lendo";
+    return cab + `<div class="cartao">
+      <label for="plano-texto">Planejamento do PS</label>
+      <textarea id="plano-texto" data-campo="plano-texto" style="min-height:260px" placeholder="Ex.: Desafio de Dados: lançamento 23/11, entrega 27/11&#10;Treinamento síncrono de Dados em 24/11 às 19h, no canal #treinamentos&#10;…">${esc(pl.texto)}</textarea>
+      <div class="acoes" style="margin-top:10px">
+        <button class="botao pequeno" data-acao="plano-exemplo">Usar um exemplo</button>
+        <label class="botao pequeno" style="margin:0">Abrir arquivo .txt<input type="file" id="plano-arquivo" accept=".txt,.md,text/plain" hidden></label>
+      </div>
+      <div class="campos" style="margin-top:16px">
+        <div><label>Quantos aspirantes entregam cada desafio?</label><input type="number" min="1" max="500" data-campo="plano-n" value="${pl.nAspirantes}"></div>
+      </div>
+      <p class="nota">Esse número define quantas correções e dúvidas serão divididas por desafio.</p>
+      <div class="acoes" style="margin-top:14px">
+        <button class="botao primario" data-acao="gerar-plano" ${lendo ? "disabled" : ""}>${lendo ? "Lendo o planejamento…" : "Gerar plano"}</button>
+      </div>
+    </div>`;
+  }
+
+  const r = pl.resultado;
+  const incluidos = r.eventos.filter((_, i) => pl.lido.incluir[i]);
+  const res = resumoPlano(r, estado);
+  const maxH = Math.max(1, ...res.porPessoa.map((x) => x.h));
+  const origem =
+    pl.lido.fonte === "ia"
+      ? `<div class="origem ia">Lido pela IA. Confira as datas antes de confirmar.${pl.lido.observacoes.length ? ` Atenção: ${pl.lido.observacoes.map(esc).join(" ")}` : ""}</div>`
+      : `<div class="origem">${esc(pl.lido.aviso || "Lido pelas regras locais.")} Confira as datas.</div>`;
+
+  const opcoesMembros = (sel) =>
+    membrosAtivos()
+      .map((m) => `<option value="${m.id}" ${m.id === sel ? "selected" : ""}>${esc(m.nome.split(" ")[0])} · ${esc(m.area)}</option>`)
+      .join("");
+
+  const blocos = pl.lido.eventos
+    .map((ev, i) => {
+      const incluir = pl.lido.incluir[i];
+      const evPlano = incluir ? r.eventos.find((x) => x._origem === i) : null;
+      const tarefas = evPlano ? r.tarefas.filter((t) => t.pedido.eventoId === evPlano.id) : [];
+      return `<div class="plano-item ${incluir ? "" : "excluido"}">
+        <div class="plano-cab">
+          <label class="check"><input type="checkbox" data-campo="plano-incluir" data-i="${i}" ${incluir ? "checked" : ""}></label>
+          <span class="num plano-data">${formatarCurto(ev.data)}${ev.hora ? ` · ${horaBR(ev.hora)}` : ""}</span>
+          <span class="etiqueta ev-${ev.tipo}">${TIPOS_EVENTO[ev.tipo]}</span>
+          <b>${esc(ev.titulo)}</b>
+          ${ev.entrega ? `<span class="prazo">entrega ${formatarCurto(ev.entrega)}</span>` : ""}
+        </div>
+        ${tarefas
+          .map(
+            (t) => `<div class="plano-task">
+            <div><span>${esc(t.pedido.titulo)}</span><br><small class="prazo">até ${formatarCurto(t.pedido.prazo)} · ${horas(t.pedido.quantidade * t.pedido.esforcoPorUnidadeH)}</small></div>
+            <div class="plano-partes">${
+              t.partes.length
+                ? t.partes
+                    .map(
+                      (p, j) => `<span class="plano-parte"><select data-campo="plano-parte" data-t="${t.id}" data-p="${j}" aria-label="Responsável">${opcoesMembros(p.membroId)}</select>
+                      <small class="num">${t.divisivel && t.pedido.quantidade > 1 ? `${p.unidades}/${t.pedido.quantidade} · ` : ""}${horas(p.esforcoH)}</small></span>`
+                    )
+                    .join("")
+                : `<span class="etiqueta sem_responsavel">ninguém elegível</span>`
+            }</div>
+          </div>`
+          )
+          .join("")}
+      </div>`;
+    })
+    .join("");
+
+  return cab + `${origem}
+  <div class="kpis">
+    <div class="kpi"><b>${incluidos.length}</b><span>itens no cronograma</span></div>
+    <div class="kpi"><b>${res.tasks}</b><span>tasks distribuídas</span></div>
+    <div class="kpi"><b>${res.pessoas}</b><span>pessoas envolvidas</span></div>
+    <div class="kpi"><b>${horas(res.totalH)}</b><span>de trabalho no total</span></div>
+  </div>
+  <div class="grade grade-3-1 bloco">
+    <div class="cartao"><h2>O que cada um vai fazer</h2>${blocos || `<p class="vazio">Nenhum item encontrado. Volte e confira o texto.</p>`}</div>
+    <div>
+      <div class="cartao"><h2>Horas por pessoa no PS</h2>
+        ${res.porPessoa
+          .map(
+            ({ membro: m, h }) => `<div class="carga"><div class="carga-nome">${esc(m.nome)}<small>${esc(m.area)}</small></div>
+            <div class="barra"><i style="width:${(h / maxH) * 100}%"></i></div><div class="carga-valor">${horas(h)}</div></div>`
+          )
+          .join("")}
+        <p class="nota">O repasse equilibra a carga semana a semana, respeitando as horas de cada um.</p>
+      </div>
+      <div class="cartao">
+        <label class="check"><input type="checkbox" data-campo="plano-substituir" ${pl.substituir ? "checked" : ""}> Substituir o cronograma atual</label>
+        <label class="check" style="margin-top:8px"><input type="checkbox" data-campo="plano-publicar" ${pl.publicar ? "checked" : ""}> Publicar o cronograma no Discord dos aspirantes</label>
+        <div class="acoes" style="margin-top:14px">
+          <button class="botao primario" data-acao="confirmar-plano" ${incluidos.length ? "" : "disabled"}>Confirmar e criar tudo</button>
+          <button class="botao texto" data-acao="voltar-plano">Voltar ao texto</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function recalcularPlano() {
+  const pl = ui.plano;
+  const escolhidos = pl.lido.eventos.map((ev, i) => ({ ...ev, _origem: i })).filter((ev) => pl.lido.incluir[ev._origem]);
+  pl.resultado = montarPlano(estado, escolhidos, { hoje, nAspirantes: pl.nAspirantes });
 }
 
 // ---------- Ações ----------
@@ -1007,7 +1108,7 @@ const acoes = {
         nome: m.nome,
         area: m.area,
         capacidadeSemanalH: m.capacidadeSemanal,
-        cargaAbertaH: cargaAberta(estado, m.id),
+        cargaAbertaH: cargaAtual(m.id),
         ausenteAte: m.indisponivelAte,
       })),
       tasksAbertas: estado.tasks
@@ -1180,6 +1281,98 @@ const acoes = {
     );
   },
 
+
+  // Montar o PS a partir do planejamento
+  "abrir-plano"() {
+    ui.plano = { passo: "texto", texto: "", nAspirantes: 12, substituir: true, publicar: true, lido: null, resultado: null };
+    ui.aba = "cronograma";
+    render();
+    window.scrollTo(0, 0);
+  },
+  "fechar-plano"() {
+    ui.plano = null;
+    render();
+  },
+  "plano-exemplo"() {
+    ui.plano.texto = exemploPlanejamento(hoje);
+    render();
+  },
+  "voltar-plano"() {
+    ui.plano.passo = "texto";
+    render();
+  },
+  async "gerar-plano"() {
+    const pl = ui.plano;
+    if (!pl.texto.trim()) return toast("Cole o planejamento ou use o exemplo.");
+    pl.passo = "lendo";
+    render();
+    const lido = await lerPlanejamento(pl.texto, estado, hoje);
+    if (!ui.plano) return;
+    lido.incluir = lido.eventos.map(() => true);
+    pl.lido = lido;
+    recalcularPlano();
+    pl.passo = "revisao";
+    render();
+    window.scrollTo(0, 0);
+  },
+  async "confirmar-plano"() {
+    const pl = ui.plano;
+    const r = pl.resultado;
+    if (pl.substituir) estado.eventos = [];
+    const novosEventos = r.eventos.map(({ _origem, ...ev }) => ev);
+    estado.eventos.push(...novosEventos);
+    let criadas = 0;
+    for (const t of r.tarefas) {
+      const porPessoa = new Map();
+      for (const p of t.partes) {
+        const v = porPessoa.get(p.membroId) || { unidades: 0, esforcoH: 0 };
+        v.unidades += p.unidades;
+        v.esforcoH += p.esforcoH;
+        porPessoa.set(p.membroId, v);
+      }
+      const dividida = t.divisivel && t.pedido.quantidade > 1 && porPessoa.size > 1;
+      const grupoId = novoId("g");
+      for (const [membroId, v] of porPessoa) {
+        const task = {
+          id: novoId("t"),
+          grupoId,
+          titulo: dividida ? `${t.pedido.titulo} (${v.unidades} de ${t.pedido.quantidade})` : t.pedido.titulo,
+          tipoId: t.pedido.tipoId,
+          area: t.pedido.area,
+          prazo: t.pedido.prazo,
+          esforcoH: Math.round(v.esforcoH * 100) / 100,
+          unidades: v.unidades,
+          responsavelId: null,
+          status: "atribuida",
+          recusadoPor: [],
+          historico: [],
+          criadaEm: hoje,
+          origem: "planejamento",
+          eventoId: t.pedido.eventoId,
+        };
+        estado.tasks.push(task);
+        atribuirTask(task, membroId, `Atribuída a ${primeiroNome(membroId)} ao montar o PS a partir do planejamento.`);
+        criadas++;
+      }
+    }
+    registrar(estado, `PS montado a partir do planejamento: ${novosEventos.length} itens no cronograma e ${criadas} tasks distribuídas.`);
+    persistir();
+    avisarEquipe({ tipo: "repasse", texto: `O PS foi montado: ${novosEventos.length} itens no cronograma e ${criadas} tasks distribuídas. Cada um já pode ver as suas no repasse.` });
+    const primeiro = novosEventos.map((e) => e.data).sort()[0] || hoje;
+    const publicar = pl.publicar;
+    ui.plano = null;
+    ui.aba = "cronograma";
+    ui.cronoVista = "calendario";
+    ui.calMes = primeiro.slice(0, 7);
+    ui.calDia = primeiro;
+    render();
+    window.scrollTo(0, 0);
+    toast(`Pronto: ${novosEventos.length} itens e ${criadas} tasks criadas.`);
+    if (publicar) {
+      const futuros = eventosOrdenados().filter((e) => (e.entrega || e.data) >= hoje);
+      await publicarAspirantes({ tipo: "cronograma", titulo: "Cronograma do processo seletivo", eventos: futuros.map(eventoParaDiscord) }, `cronograma publicado (${futuros.length} itens).`);
+    }
+  },
   "crono-vista"(el) {
     ui.cronoVista = el.dataset.id;
     render();
@@ -1288,6 +1481,28 @@ const acoes = {
 
 // Campos editáveis
 const campos = {
+  "plano-n"(el) {
+    ui.plano.nAspirantes = Math.max(1, Math.min(500, Number(el.value) || 12));
+    return false;
+  },
+  "plano-incluir"(el) {
+    ui.plano.lido.incluir[Number(el.dataset.i)] = el.checked;
+    recalcularPlano();
+    return true;
+  },
+  "plano-parte"(el) {
+    const t = ui.plano.resultado.tarefas.find((x) => x.id === el.dataset.t);
+    t.partes[Number(el.dataset.p)].membroId = el.value;
+    return true;
+  },
+  "plano-substituir"(el) {
+    ui.plano.substituir = el.checked;
+    return false;
+  },
+  "plano-publicar"(el) {
+    ui.plano.publicar = el.checked;
+    return false;
+  },
   "ev-tipo"(el) {
     const desafio = el.value === "desafio";
     document.getElementById("ev-entrega-campo").style.display = desafio ? "" : "none";
@@ -1365,12 +1580,20 @@ document.addEventListener("click", (ev) => {
 document.addEventListener("input", (ev) => {
   const el = ev.target;
   if (el.dataset && el.dataset.campo === "texto-pedido") campos["texto-pedido"](el);
+  if (el.dataset && el.dataset.campo === "plano-texto" && ui.plano) ui.plano.texto = el.value;
 });
 
 document.addEventListener("change", (ev) => {
   const el = ev.target;
+  if (el.id === "plano-arquivo" && el.files && el.files[0] && ui.plano) {
+    el.files[0].text().then((txt) => {
+      ui.plano.texto = txt.slice(0, 20000);
+      render();
+    });
+    return;
+  }
   const fn = el.dataset && campos[el.dataset.campo];
-  if (fn && el.dataset.campo !== "texto-pedido") {
+  if (fn && el.dataset.campo !== "texto-pedido" && el.dataset.campo !== "plano-texto") {
     const rerender = fn(el);
     if (rerender) render();
   }

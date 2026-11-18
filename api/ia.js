@@ -7,10 +7,10 @@ const MODELO_PADRAO = "gemini-flash-lite-latest"; // rápido; troque com a vari�
 const DIAS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
 
 // Calendário dos próximos 14 dias, para o modelo não errar a conta de "quinta", "sexta"...
-function calendario(hoje) {
+function calendario(hoje, dias = 14) {
   const [a, m, d] = String(hoje).split("-").map(Number);
   const linhas = [];
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < dias; i++) {
     const dt = new Date(Date.UTC(a, m - 1, d + i));
     linhas.push(`${dt.toISOString().slice(0, 10)} = ${DIAS[dt.getUTCDay()]}${i === 0 ? " (hoje)" : ""}`);
   }
@@ -39,6 +39,32 @@ Responda apenas com JSON neste formato:
 {"titulo": string, "tipoId": string, "area": string, "prazo": string|null, "quantidade": number, "esforcoPorUnidadeH": number, "maxPessoas": number|null, "observacao": string}
 
 Pedido do gerente: """${String(texto).slice(0, 1000)}"""`;
+}
+
+function promptPlanejar({ texto, hoje, areas }) {
+  return `Você organiza o processo seletivo (PS) de uma empresa júnior. O PS tem desafios por subárea (com data de lançamento e de entrega) e treinamentos síncronos (com data e horário), além de avisos (resultado, reuniões gerais etc.).
+Leia o planejamento abaixo e extraia TODOS os itens do cronograma.
+
+Hoje é ${hoje}. Calendário de referência (datas sem ano são deste ano, ou do próximo se já passaram há muito tempo):
+${calendario(hoje, 45)}
+
+Subáreas possíveis: ${JSON.stringify([...areas, "Geral"])}. Use "Geral" quando o item não for de uma subárea.
+
+Regras:
+- "tipo" é "desafio", "treinamento" ou "aviso".
+- "data" é AAAA-MM-DD: lançamento (desafio), dia do treinamento ou do aviso.
+- "entrega" é AAAA-MM-DD só para desafios; null se não houver.
+- "hora" é HH:MM (24h) ou null.
+- "titulo" curto, ex.: "Desafio de Dados", "Treinamento síncrono de Marketing", "Resultado final".
+- "local" é o canal, sala ou link, se houver; senão "".
+- Se um item citar várias subáreas ("desafios de Dados e Marketing"), crie um item para cada uma.
+- Não invente itens nem datas. Se algo estiver ambíguo, coloque uma frase curta em "observacoes".
+
+Responda apenas com JSON:
+{"eventos": [{"tipo": string, "titulo": string, "area": string, "data": string, "entrega": string|null, "hora": string|null, "local": string, "descricao": string}], "observacoes": [string]}
+
+Planejamento:
+"""${String(texto).slice(0, 8000)}"""`;
 }
 
 function promptResumo({ contexto }) {
@@ -124,6 +150,14 @@ module.exports = async function handler(req, res) {
         return;
       }
       res.status(200).json(await chamarGemini(promptInterpretar(corpo)));
+      return;
+    }
+    if (corpo.acao === "planejar") {
+      if (!corpo.texto || !corpo.hoje || !Array.isArray(corpo.areas)) {
+        res.status(400).json({ erro: "Campos faltando" });
+        return;
+      }
+      res.status(200).json(await chamarGemini(promptPlanejar(corpo)));
       return;
     }
     if (corpo.acao === "resumo") {

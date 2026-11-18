@@ -305,3 +305,17 @@ details.secao[open] > summary { margin-bottom: 14px; }
 details.secao .cartao { border: 0; padding: 0; }
 .resumo-caixa { background: var(--verde-claro); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
 .resumo-caixa .resumo-ia { margin: 0; }
+
+/* ---------- Montar o PS ---------- */
+.plano-item { border-bottom: 1px solid var(--linha); padding: 12px 0; }
+.plano-item:last-child { border-bottom: 0; }
+.plano-item.excluido { opacity: 0.45; }
+.plano-cab { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.plano-cab .check { margin: 0; }
+.plano-data { font-size: 13px; color: var(--suave); min-width: 96px; }
+.plano-task { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; margin: 8px 0 0 30px; padding: 8px 12px; background: #f8f7f3; border-radius: 8px; font-size: 14px; }
+.plano-partes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.plano-parte { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--linha); border-radius: 8px; padding: 2px 8px 2px 2px; }
+.plano-parte select { border: 0; padding: 4px 6px; min-width: 0; width: auto; font-size: 13px; }
+.plano-parte small { color: var(--suave); font-size: 12px; white-space: nowrap; }
+@media (max-width: 760px) { .plano-task { grid-template-columns: 1fr; margin-left: 0; } .plano-partes { justify-content: flex-start; } }

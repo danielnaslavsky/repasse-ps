@@ -17,13 +17,19 @@ Num PS, a gerência distribui dezenas de tasks curtas e com prazo apertado: corr
 - **Gerente do PS:** cria tasks, confirma a distribuição proposta, acompanha o painel, ajusta a equipe e os tipos de task.
 - **Membro do PS:** uma tela só, com as próprias tasks. Aceita, conclui ou aperta "Não consigo", e avisa ausências com "Vou me ausentar".
 
-**Fluxo**
+**Fluxo do dia a dia**
 
 1. **Pede.** A gerente escreve, por exemplo: *"Chegaram 14 entregas do desafio de Marketing, corrigir até sexta"*. A IA (Gemini) transforma a frase em uma task estruturada: tipo, área, prazo, quantidade e horas por unidade. Se a IA estiver indisponível, regras locais fazem a leitura, e a gerente confere os campos de qualquer forma.
 2. **Distribui.** O motor de atribuição calcula quem deve fazer. Tasks divisíveis (14 correções, 8 entrevistas) são repartidas entre várias pessoas. Cada escolha vem com os motivos e a carga antes e depois.
 3. **Confirma e avisa.** A gerente confirma com um clique (ou troca alguém). Cada membro passa a ver a sua parte, e o sistema gera a mensagem pronta para o grupo do WhatsApp.
 4. **Repassa.** Quem não pode aperta "Não consigo". A task vai automaticamente para a próxima pessoa mais bem pontuada, e o histórico registra o motivo. Quem avisa uma ausência pode repassar de uma vez todas as tasks com prazo nesse período.
 5. **Acompanha.** O painel mostra tasks atrasadas, gente acima da capacidade e a carga da semana. Um botão gera, com IA, um resumo do dia: o que está em risco e o que fazer hoje.
+
+## Montar o PS a partir do planejamento
+
+A gerência cola o texto de como o PS vai ser estruturado (ou abre um .txt) e informa quantos aspirantes entregam cada desafio. A IA extrai o cronograma: cada desafio com lançamento e entrega, cada treinamento síncrono com data e horário, cada aviso. Para cada item, o repasse cria as tasks da equipe e distribui todas de uma vez, equilibrando a carga semana a semana. A gerência revisa numa prévia (pode excluir itens e trocar responsáveis) e confirma: o cronograma, o calendário e as tasks de cada membro ficam prontos, e o cronograma pode ir direto para o Discord dos aspirantes.
+
+Sem IA disponível, regras locais leem um item por linha ("Desafio de Dados: lançamento 23/11, entrega 27/11").
 
 ## Cronograma, calendário e Discord
 
@@ -49,7 +55,7 @@ Primeiro saem da disputa quem não pode receber a task: inativos, quem já recus
 | Critério | Pontos |
 |---|---|
 | É da área da task | +30 |
-| Folga na semana depois de receber a task | até +40, proporcional às horas livres |
+| Folga na semana do prazo depois de receber a task | até +40, proporcional às horas livres |
 | Outros prazos a até 1 dia deste | até +15 (−5 por prazo) |
 | Rodízio: tasks recebidas nos últimos 7 dias | até +15 (−3 por task) |
 | Ausente hoje, mas volta antes do prazo | −10 |
@@ -73,6 +79,7 @@ js/app.js             interface (telas do gerente e do membro)
 js/motor.js           motor de atribuição (pontuação, divisão, repasse)
 js/interpretador.js   leitura do pedido: IA com regras locais de reserva
 js/calendario.js      grade do mês e itens de cada dia
+js/planejador.js      planejamento em texto → cronograma + tasks distribuídas
 js/discord.js         mensagens para o Discord
 js/dados.js           estado, dados de demonstração e persistência
 js/datas.js           utilitários de data
@@ -94,7 +101,9 @@ Testes:
 
 ```bash
 node testes/motor.test.mjs
+node testes/plano.test.mjs
 node testes/api.test.cjs
+node testes/discord.test.cjs
 ```
 
 ## Publicar na Vercel

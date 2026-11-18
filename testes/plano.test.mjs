@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import { dadosDemonstracao } from "../js/dados.js";
+import { exemploPlanejamento, interpretarPlanoLocal, montarPlano, resumoPlano } from "../js/planejador.js";
+const hoje="2026-11-17"; const e=dadosDemonstracao(hoje);
+const txt=exemploPlanejamento(hoje); console.log(txt.split("\n").slice(3,6).join(" | "));
+const evs=interpretarPlanoLocal(txt,e,hoje);
+console.log(evs.map(x=>[x.tipo,x.titulo,x.data,x.entrega,x.hora,x.local].join(" ; ")).join("\n"));
+assert.equal(evs.length, 11);
+const plano=montarPlano(e,evs,{hoje,nAspirantes:12});
+const r=resumoPlano(plano,e); console.log(r.itens, r.tasks, r.pessoas, r.totalH);
+console.log(r.porPessoa.map(x=>x.membro.nome.split(" ")[0]+":"+x.h).join(" "));
+console.log(plano.tarefas.filter(t=>t.semResponsavel).map(t=>t.pedido.titulo));
