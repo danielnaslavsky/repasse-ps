@@ -29,7 +29,13 @@ Num PS, a gerência distribui dezenas de tasks curtas e com prazo apertado: corr
 
 A gerência cola o texto de como o PS vai ser estruturado (ou abre um .txt) e informa quantos aspirantes entregam cada desafio. A IA extrai o cronograma: cada desafio com lançamento e entrega, cada treinamento síncrono com data e horário, cada aviso. Para cada item, o repasse cria as tasks da equipe e distribui todas de uma vez, equilibrando a carga semana a semana. A gerência revisa numa prévia (pode excluir itens e trocar responsáveis) e confirma: o cronograma, o calendário e as tasks de cada membro ficam prontos, e o cronograma pode ir direto para o Discord dos aspirantes.
 
-Sem IA disponível, regras locais leem um item por linha ("Desafio de Dados: lançamento 23/11, entrega 27/11").
+O planejamento pode vir no formato de um documento de verdade, com tabela por subárea, dinâmica, entrevistas e observações. O teste `testes/plano-completo.test.mjs` usa um exemplo assim (`testes/exemplos/planejamento-completo.txt`).
+
+- **Etapas com a equipe** (dinâmica em grupo, entrevistas): cada membro que participa recebe a sua task, uma pessoa por vaga ("6 membros para facilitar" vira 6 tasks para 6 pessoas diferentes). Entrevistas sem detalhes contam 30 min por aspirante, com dois membros em cada.
+- **Compromissos internos** (reunião geral, deliberação): ficam só no calendário da equipe. Não vão para o Discord nem para a planilha dos aspirantes. Uma regra confere o que a IA devolve e marca esses itens mesmo quando ela deixa passar.
+- **Responsáveis citados no texto** ("o Rafael prepara o case de Dados"): aparecem no aviso da prévia, para a gerência trocar o responsável antes de confirmar. O repasse não tenta adivinhar a qual task o nome se refere.
+
+Sem IA disponível, regras locais leem um item por linha ("Desafio de Dados: lançamento 23/11, entrega 27/11") e tabelas com uma linha por subárea (lançamento, entrega, treinamento).
 
 ## Modo demonstração e modo equipe
 

@@ -57,6 +57,15 @@ const ia = validarEventosIA([
 assert.deepEqual([ia[0].pessoas, ia[0].duracaoH, ia[0].interno], [8, 5, false]);
 assert.equal(ia[1].interno, true);
 assert.equal(ia[2].interno, false);
+// rede de segurança sobre o que a IA devolveu
+const ia2 = validarEventosIA([
+  { tipo: "aviso", titulo: "Deliberação da equipe", area: "Geral", data: "2026-12-17", interno: false },
+  { tipo: "aviso", titulo: "Dinâmica em grupo", area: "Geral", data: "2026-12-12" },
+  { tipo: "aviso", titulo: "Divulgação de quem passou para a dinâmica", area: "Geral", data: "2026-12-10" },
+], estado);
+assert.equal(ia2[0].interno, true);
+assert.equal(ia2[1].tipo, "etapa");
+assert.equal(ia2[2].tipo, "aviso");
 
 // 6. Estado antigo (sem o tipo de etapa) ganha o tipo que falta.
 const antigo = dadosDemonstracao(hoje);

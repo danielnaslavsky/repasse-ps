@@ -114,8 +114,13 @@ export function validarEventosIA(lista, estado) {
   if (!Array.isArray(lista)) return [];
   const areas = [...estado.areas, "Geral"];
   const ok = [];
-  for (const e of lista.slice(0, 60)) {
-    if (!e || !["desafio", "treinamento", "etapa", "aviso"].includes(e.tipo)) continue;
+  for (const bruto of lista.slice(0, 60)) {
+    if (!bruto || !["desafio", "treinamento", "etapa", "aviso"].includes(bruto.tipo)) continue;
+    // Rede de segurança: a IA às vezes deixa passar etapas e compromissos internos.
+    const e = { ...bruto };
+    const nome = String(e.titulo || "").toLowerCase();
+    if (e.tipo === "aviso" && ETAPA.test(nome) && !/divulga|planilha|resultado|envio|aviso/.test(nome)) e.tipo = "etapa";
+    if (e.tipo === "aviso" && INTERNO.test(nome)) e.interno = true;
     if (!ISO.test(e.data || "")) continue;
     const entrega = e.tipo === "desafio" && ISO.test(e.entrega || "") && e.entrega >= e.data ? e.entrega : null;
     ok.push({
