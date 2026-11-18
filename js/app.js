@@ -122,6 +122,7 @@ function atribuirTask(task, membroId, motivo) {
   task.atribuidaEm = hoje;
   task.atribuidaTs = Date.now();
   delete task.atrasoTratado;
+  delete task.aceiteCobrado;
   task.historico.push({ em: new Date().toISOString(), texto: motivo });
   if (membroId) {
     const r = pontuar(estado, membro(membroId), { ...task, esforcoH: 0 }, hoje);
@@ -202,13 +203,13 @@ function telaEntrada() {
   return `<header class="topo"><div class="topo-dentro"><div class="marca">repasse<span>.</span><small>PS</small></div></div></header>
   <main>
     <section class="entrada-topo">
-      <h1>Quem faz o quê no PS, sem planilha e sem cobrança no grupo.</h1>
-      <p class="sub">A gerência escreve o que precisa ser feito. O repasse decide quem faz, considerando área, carga e prazos, explica a escolha e repassa sozinho quando alguém não pode.</p>
+      <h1>Cole o planejamento do PS. O repasse monta o resto.</h1>
+      <p class="sub">Cronograma, calendário e quem faz o quê, distribuído pela área e pela carga de cada membro. Depois, o piloto automático cobra, repassa e avisa os aspirantes sozinho.</p>
     </section>
     <div class="como">
-      <div><b>01 · pede</b>"Chegaram 14 entregas de Marketing, corrigir até sexta." Uma frase, sem formulário.</div>
-      <div><b>02 · distribui</b>O sistema divide entre quem é da área e tem folga, e mostra o motivo de cada escolha.</div>
-      <div><b>03 · repassa</b>Quem não pode aperta um botão. A task vai para a próxima pessoa, sem a gerência intervir.</div>
+      <div><b>01 · monta</b>A gerência cola o texto de como o PS vai ser. Desafios, treinamentos e todas as tasks da equipe saem distribuídos em segundos.</div>
+      <div><b>02 · distribui</b>Cada task vai para quem é da área e tem folga na semana, com o motivo da escolha. Uma frase também cria uma task avulsa.</div>
+      <div><b>03 · segue sozinho</b>Quem não pode aperta um botão e a task muda de dono. Mudanças no cronograma vão para o Discord e para a planilha dos aspirantes.</div>
     </div>
     <div class="bloco">
       <h2>Entrar como</h2>
@@ -865,10 +866,19 @@ function rodarPiloto() {
   if (pl.aceite24h) {
     for (const t of estado.tasks) {
       if (t.status !== "atribuida" || !t.responsavelId) continue;
-      if (idadeAtribuicao(t) < UM_DIA) continue;
+      if (idadeAtribuicao(t) < UM_DIA || t.aceiteCobrado) continue;
       const antes = primeiroNome(t.responsavelId);
+      // Só repassa se houver para quem: senão mantém com a pessoa e avisa (nunca deixa a task sem dono).
+      const candidato = redistribuir(estado, { ...t, recusadoPor: [...(t.recusadoPor || []), t.responsavelId] }, hoje);
+      if (!candidato) {
+        t.aceiteCobrado = true;
+        acoes.push(`"${t.titulo}" não foi aceita por ${antes} em 24h, mas não há outra pessoa elegível; continua com ${antes} e a equipe foi avisada.`);
+        avisarEquipe({ tipo: "repasse", texto: `${antes}, a task "${t.titulo}" está esperando o seu aceite há mais de 24h.` });
+        continue;
+      }
+      if (t.prazo < hoje) t.prazo = somarDias(hoje, 1);
       const novo = repassar(t, t.responsavelId, "não aceitou em 24h");
-      acoes.push(`"${t.titulo}" não foi aceita por ${antes} em 24h; ${novo ? `repassada para ${primeiroNome(novo)}` : "ninguém elegível, ficou para a gerência"}.`);
+      acoes.push(`"${t.titulo}" não foi aceita por ${antes} em 24h; repassada para ${primeiroNome(novo)}${t.prazo === somarDias(hoje, 1) ? " com prazo para amanhã" : ""}.`);
     }
   }
   if (pl.atrasadas !== "desligado") {
