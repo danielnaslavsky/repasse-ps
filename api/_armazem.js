@@ -58,4 +58,19 @@ function identificar(codigo, estado) {
   return m ? { papel: m.papel, membroId: m.id } : null;
 }
 
-module.exports = { config, comando, lerEstado, lerVersao, gravarEstado, identificar };
+// Para publicar no Discord ou na planilha, é preciso um código válido do modo equipe.
+// (Se o modo equipe não estiver configurado, a verificação não se aplica.)
+async function autorizarPublicacao(req) {
+  if (!process.env.PS_CODIGO_GERENTE || !config()) return true;
+  const codigo = String(req.headers["x-codigo"] || "");
+  if (!codigo) return false;
+  if (codigo === process.env.PS_CODIGO_GERENTE) return true;
+  try {
+    const { estado } = await lerEstado();
+    return !!identificar(codigo, estado);
+  } catch (e) {
+    return false;
+  }
+}
+
+module.exports = { config, comando, lerEstado, lerVersao, gravarEstado, identificar, autorizarPublicacao };

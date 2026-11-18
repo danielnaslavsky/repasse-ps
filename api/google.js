@@ -4,6 +4,8 @@
 //   GOOGLE_SCRIPT_TOKEN  o mesmo código definido em TOKEN no Apps Script
 //   GOOGLE_SHEET_URL     opcional: link da planilha, para o site mostrar o botão "Abrir planilha"
 
+const A = require("./_armazem.js");
+
 // Envia a lista de eventos ao Apps Script. Devolve { ok, status, erro, itens, naoConfigurado }.
 async function enviarPlanilha(eventos) {
   const url = process.env.GOOGLE_SCRIPT_URL;
@@ -80,6 +82,10 @@ module.exports = async function handler(req, res) {
   }
   if (req.method !== "POST") {
     res.status(405).json({ erro: "Use POST" });
+    return;
+  }
+  if (!(await A.autorizarPublicacao(req))) {
+    res.status(403).json({ erro: "Atualizar a planilha só é possível no modo equipe", demonstracao: true });
     return;
   }
   let corpo = req.body;

@@ -33,7 +33,7 @@ Sem IA disponível, regras locais leem um item por linha ("Desafio de Dados: lan
 
 ## Modo demonstração e modo equipe
 
-- **Demonstração** (o link puro do site): dados fictícios salvos no navegador de cada pessoa. Cada avaliador explora a sua cópia, e "Restaurar dados de demonstração" volta ao início.
+- **Demonstração** (o link puro do site): dados fictícios salvos no navegador de cada pessoa. Cada avaliador explora a sua cópia, e "Restaurar dados de demonstração" volta ao início. Nada sai para fora: o Discord e a planilha reais só recebem publicações do modo equipe (o servidor exige um código válido).
 - **Equipe** (`/?c=CÓDIGO`): os dados ficam no servidor (Upstash Redis) e são os mesmos para todos. A gerência entra com o código definido em `PS_CODIGO_GERENTE`; cada membro recebe um link próprio, que abre direto nas suas tasks (Equipe → Links de acesso da equipe). "Novo link" invalida o anterior. As gravações usam controle de versão: se duas pessoas mexem ao mesmo tempo, ninguém sobrescreve o outro sem perceber.
 
 ## Piloto automático

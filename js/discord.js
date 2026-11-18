@@ -40,11 +40,12 @@ export function resumoDatas(ev) {
 }
 
 // Devolve { ok, erro, naoConfigurado }. Pede o código da gerência se a Vercel exigir.
-export async function enviarDiscord(corpo, { perguntarPin = true } = {}) {
+export async function enviarDiscord(corpo, { perguntarPin = true, codigo = null } = {}) {
+  if (!codigo) return { ok: false, demonstracao: true, erro: "demonstração" };
   const tentar = async (pin) => {
     const resp = await fetch("/api/discord", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-codigo": codigo },
       body: JSON.stringify({ ...corpo, pin }),
     });
     let dados = {};

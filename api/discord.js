@@ -4,6 +4,8 @@
 //   DISCORD_WEBHOOK_EQUIPE      opcional: webhook do canal da equipe do PS (novas tasks, repasses)
 //   DISCORD_PIN                 opcional: código que a gerência digita para poder publicar
 
+const A = require("./_armazem.js");
+
 const CORES = { normal: 0x0e5a47, mudanca: 0xa86a12, cancelado: 0xb0302a, equipe: 0x2b5c8a };
 
 // Ninguém é marcado (@everyone, @here, cargos) a partir de texto vindo do site.
@@ -182,6 +184,10 @@ module.exports = async function handler(req, res) {
     }
   }
   corpo = corpo || {};
+  if (!(await A.autorizarPublicacao(req))) {
+    res.status(403).json({ erro: "Publicar no Discord só é possível no modo equipe", demonstracao: true });
+    return;
+  }
   if (process.env.DISCORD_PIN && corpo.pin !== process.env.DISCORD_PIN) {
     res.status(401).json({ erro: "Código da gerência inválido" });
     return;

@@ -673,15 +673,20 @@ function blocoAusencia(eu) {
 // ---------- Discord ----------
 // Avisos para o canal da equipe: silenciosos (se o webhook da equipe não existir, nada acontece).
 function avisarEquipe(corpo) {
-  enviarDiscord(corpo, { perguntarPin: false }).catch(() => {});
+  if (!equipe.ativo) return; // na demonstração nada sai para o Discord
+  enviarDiscord(corpo, { perguntarPin: false, codigo: equipe.codigo }).catch(() => {});
 }
 
 async function publicarAspirantes(corpo, mensagemOk) {
   ui.enviando = true;
   render();
-  const r = await enviarDiscord(corpo);
+  const r = await enviarDiscord(corpo, { codigo: equipe.ativo ? equipe.codigo : null });
   ui.enviando = false;
   render();
+  if (r.demonstracao) {
+    toast("Demonstração: nada foi publicado. No modo equipe, isto iria para o Discord dos aspirantes.");
+    return false;
+  }
   if (r.ok) toast(mensagemOk);
   else if (r.naoConfigurado) toast("O Discord ainda não está configurado na Vercel (DISCORD_WEBHOOK_ASPIRANTES).");
   else toast(`Não foi possível publicar no Discord: ${r.erro}`);
@@ -890,13 +895,17 @@ async function consultarGoogle() {
 }
 
 async function sincronizarGoogle({ manual = false } = {}) {
+  if (!equipe.ativo) {
+    if (manual) toast("Demonstração: a planilha não foi alterada. No modo equipe, ela seria atualizada.");
+    return;
+  }
   if (!manual && !estado.piloto.sincronizarGoogle) return;
   if (!manual && !ui.google.configurado) return;
   ui.google.sincronizando = true;
   if (manual) render();
   const eventos = eventosOrdenados().map((e) => ({ ...e, tipoRotulo: TIPOS_EVENTO[e.tipo] }));
   try {
-    const r = await fetch("/api/google", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventos }) });
+    const r = await fetch("/api/google", { method: "POST", headers: { "Content-Type": "application/json", "x-codigo": equipe.codigo }, body: JSON.stringify({ eventos }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) throw new Error(d.erro || `HTTP ${r.status}`);
     estado.googleSinc = { em: new Date().toISOString(), erro: null };
