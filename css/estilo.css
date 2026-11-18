@@ -78,7 +78,7 @@ h3 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
 @media (max-width: 860px) {
   .grade-2, .grade-3-1 { grid-template-columns: 1fr; }
   .topo-dentro { flex-wrap: wrap; gap: 10px; }
-  .abas { order: 3; width: 100%; }
+  .abas { order: 3; flex: 1 1 100%; width: 100%; }
 }
 
 .cartao {
@@ -323,3 +323,38 @@ details.secao .cartao { border: 0; padding: 0; }
 /* ---------- Piloto automático ---------- */
 .piloto-regra { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
 .piloto-acao { font-size: 13px; color: var(--suave); margin: 0; padding: 6px 0; border-top: 1px dashed var(--linha); }
+
+/* ---------- Modo equipe ---------- */
+.link-linha { display: grid; grid-template-columns: 200px 1fr auto; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--linha); font-size: 14px; }
+.link-codigo { font-family: var(--mono); font-size: 12px; color: var(--suave); background: #f8f7f3; border-radius: 6px; padding: 4px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+code { font-family: var(--mono); font-size: 0.92em; background: #f1efe9; border-radius: 4px; padding: 0 4px; }
+@media (max-width: 760px) { .link-linha { grid-template-columns: 1fr; gap: 4px; } }
+
+/* ---------- Celular ---------- */
+@media (max-width: 600px) {
+  main { padding: 18px 16px 70px; }
+  h1 { font-size: 24px; }
+  .entrada-topo { padding: 20px 0 12px; }
+  .entrada-topo h1 { font-size: 28px; }
+  .topo-dentro { padding: 10px 16px; gap: 8px; flex-wrap: wrap; }
+  .marca small { display: none; }
+  .perfil { margin-left: auto; }
+  .perfil-nome { font-size: 13px; }
+  .abas { order: 3; flex: 1 1 100%; width: 100%; }
+  .abas:has(.aba:only-child) { display: none; }
+  .linha-titulo { flex-wrap: wrap; }
+  .linha-titulo > .acoes { width: 100%; }
+  .linha-titulo > .acoes .botao { flex: 1; justify-content: center; }
+  .task-cartao { grid-template-columns: 1fr; padding: 14px; }
+  .task-acoes { justify-content: flex-start; }
+  .task-acoes .botao { flex: 1; justify-content: center; padding: 9px 12px; font-size: 14px; }
+  .recusa { flex-wrap: wrap; }
+  .recusa input { flex-basis: 100%; }
+  .cartao { padding: 16px; }
+  .carga { grid-template-columns: 1fr 70px; }
+  .carga .barra { grid-column: 1 / -1; grid-row: 2; }
+  .acoes .botao { white-space: normal; }
+  .kpi b { font-size: 22px; }
+  .segmentado { width: 100%; }
+  .segmentado button { flex: 1; }
+}

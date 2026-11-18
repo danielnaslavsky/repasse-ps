@@ -1,17 +1,22 @@
 // Interface do repasse: telas do gerente e do membro.
 
-import { carregar, salvar, restaurar, registrar, novoId, TIPOS_EVENTO } from "./dados.js";
+import { carregar, salvar, restaurar, registrar, novoId, TIPOS_EVENTO, dadosDemonstracao, pilotoPadrao } from "./dados.js";
 import { hojeISO, formatarCurto, prazoRelativo, diferencaDias, somarDias } from "./datas.js";
 import { proporDistribuicao, redistribuir, pontuar, cargaSemana, explicar } from "./motor.js";
 import { montarPlano, exemploPlanejamento, lerPlanejamento, tarefasDoEvento, resumoPlano } from "./planejador.js";
 import { interpretar, interpretarLocal, resumirComIA } from "./interpretador.js";
 import { enviarDiscord, eventoParaDiscord, quandoEvento, resumoDatas, horaBR } from "./discord.js";
 import { gradeMes, itensDoDia, MESES } from "./calendario.js";
+import * as R from "./regras.js";
+import { lerCodigo, esquecerCodigo, carregarRemoto, versaoRemota, salvarRemoto, garantirCodigos, novoCodigo } from "./sincronia.js";
 
 const raiz = document.getElementById("app");
 const CHAVE_PERFIL = "ps-tasks:perfil";
 
 let estado = carregar();
+// Modo equipe: entrou por um link com código (?c=...). Os dados ficam no servidor e são os mesmos para todos.
+const equipe = { codigo: lerCodigo(), perfil: null, versao: 0, salvando: false, pendente: false, timer: null, erro: null, iniciar: false };
+equipe.ativo = !!equipe.codigo;
 const hoje = hojeISO();
 
 // Explicação para tasks que vieram da demonstração sem ela.
@@ -97,7 +102,57 @@ function barraCarga(carga, cap) {
 }
 
 function persistir() {
-  salvar(estado);
+  if (!equipe.ativo) {
+    salvar(estado);
+    return;
+  }
+  equipe.pendente = true;
+  clearTimeout(equipe.timer);
+  equipe.timer = setTimeout(enviarParaServidor, 300);
+}
+
+async function enviarParaServidor() {
+  if (equipe.salvando) {
+    equipe.timer = setTimeout(enviarParaServidor, 300);
+    return;
+  }
+  equipe.salvando = true;
+  if (garantirCodigos(estado)) render();
+  const r = await salvarRemoto(equipe.codigo, estado, equipe.versao);
+  equipe.salvando = false;
+  if (r.ok) {
+    equipe.versao = r.versao;
+    equipe.pendente = false;
+    equipe.erro = null;
+  } else if (r.conflito) {
+    estado = r.estado;
+    equipe.versao = r.versao;
+    equipe.pendente = false;
+    completarExplicacoes();
+    render();
+    toast("Alguém da equipe mudou algo ao mesmo tempo. A tela foi atualizada: confira se a sua última ação ficou.");
+  } else {
+    equipe.erro = r.erro;
+    toast(`Não foi possível salvar (${r.erro}). Tentando de novo…`);
+    equipe.timer = setTimeout(enviarParaServidor, 5000);
+  }
+}
+
+// Busca mudanças de outras pessoas (a cada 10 s), sem atrapalhar quem está digitando.
+async function buscarMudancas() {
+  if (!equipe.ativo || equipe.pendente || equipe.salvando) return;
+  const ativo = document.activeElement;
+  if (ativo && ["INPUT", "TEXTAREA", "SELECT"].includes(ativo.tagName)) return;
+  const v = await versaoRemota(equipe.codigo).catch(() => null);
+  if (v == null || v <= equipe.versao) return;
+  try {
+    const d = await carregarRemoto(equipe.codigo);
+    if (equipe.pendente) return;
+    estado = d.estado;
+    equipe.versao = d.versao;
+    completarExplicacoes();
+    render();
+  } catch (e) { /* tenta na próxima */ }
 }
 
 let timerToast;
@@ -115,41 +170,17 @@ function toast(msg) {
 }
 
 // ---------- Regras de negócio da interface ----------
-function atribuirTask(task, membroId, motivo) {
-  const antes = task.responsavelId;
-  task.responsavelId = membroId;
-  task.status = membroId ? "atribuida" : "sem_responsavel";
-  task.atribuidaEm = hoje;
-  task.atribuidaTs = Date.now();
-  delete task.atrasoTratado;
-  delete task.aceiteCobrado;
-  task.historico.push({ em: new Date().toISOString(), texto: motivo });
-  if (membroId) {
-    const r = pontuar(estado, membro(membroId), { ...task, esforcoH: 0 }, hoje);
-    task.explicacao = explicar(membro(membroId).nome.split(" ")[0], r);
-  }
-  return antes;
-}
-
+const ctx = () => ({ estado, hoje, avisar: avisarEquipe });
+const atribuirTask = (task, membroId, motivo) => R.atribuirTask(ctx(), task, membroId, motivo);
 // Quando alguém não pode: escolhe outra pessoa sem passar pelo gerente.
-function repassar(task, quemSaiu, motivo) {
-  if (quemSaiu && !task.recusadoPor.includes(quemSaiu)) task.recusadoPor.push(quemSaiu);
-  const proximo = redistribuir(estado, task, hoje);
-  const nomeSaiu = quemSaiu ? primeiroNome(quemSaiu) : "—";
-  if (proximo) {
-    atribuirTask(task, proximo.membroId, `Repassada de ${nomeSaiu} para ${primeiroNome(proximo.membroId)}${motivo ? ` (${motivo})` : ""}.`);
-    registrar(estado, `"${task.titulo}": ${nomeSaiu} não pôde${motivo ? ` (${motivo})` : ""}; repassada automaticamente para ${primeiroNome(proximo.membroId)}.`);
-    avisarEquipe({ tipo: "repasse", texto: `"${task.titulo}" foi repassada de ${nomeSaiu} para ${primeiroNome(proximo.membroId)}${motivo ? ` (${motivo})` : ""}. Prazo: ${formatarCurto(task.prazo)}.` });
-    return proximo.membroId;
-  }
-  task.responsavelId = null;
-  task.status = "sem_responsavel";
-  registrar(estado, `"${task.titulo}": ${nomeSaiu} não pôde e ninguém elegível sobrou. A gerência precisa decidir.`);
-  return null;
-}
+const repassar = (task, quemSaiu, motivo) => R.repassar(ctx(), task, quemSaiu, motivo);
 
 // ---------- Telas ----------
 function render() {
+  if (equipe.ativo && !equipe.perfil) {
+    raiz.innerHTML = telaCarregandoEquipe();
+    return;
+  }
   const p = ui.perfilId && membro(ui.perfilId);
   if (!p) {
     raiz.innerHTML = telaEntrada();
@@ -174,7 +205,7 @@ function topo(p) {
         ]
       : [["minhas", "Minhas tasks", estado.tasks.filter((t) => t.responsavelId === p.id && t.status === "atribuida").length]];
   return `<header class="topo"><div class="topo-dentro">
-    <div class="marca">repasse<span>.</span><small>PS</small></div>
+    <div class="marca">repasse<span>.</span><small>${equipe.ativo ? "PS · equipe" : "PS · demonstração"}</small></div>
     <nav class="abas" aria-label="Seções">
       ${abas
         .map(
@@ -185,7 +216,7 @@ function topo(p) {
     </nav>
     <div class="perfil">
       <div class="perfil-nome">${esc(p.nome)}<small>${p.papel === "gerente" ? "Gerente do PS" : `Membro · ${esc(p.area)}`}</small></div>
-      <button class="botao pequeno" data-acao="sair">Trocar perfil</button>
+      ${equipe.ativo ? `<button class="botao pequeno" data-acao="sair-equipe" title="Sair deste navegador">Sair</button>` : `<button class="botao pequeno" data-acao="sair">Trocar perfil</button>`}
     </div>
   </div></header>`;
 }
@@ -521,7 +552,7 @@ function telaEquipe() {
       </tr>`;
     })
     .join("");
-  return `<h1>Equipe do PS</h1>
+  return `${equipe.ativo ? blocoLinks() : blocoModoEquipe()}<h1>Equipe do PS</h1>
   <p class="sub">Área, horas na semana e ausências: é com isso que o repasse decide.</p>
   <div class="cartao bloco"><div class="tabela-rolagem"><table>
     <thead><tr><th>Nome</th><th>Área</th><th>Horas/semana</th><th>Ausente até</th><th>Carga atual</th><th></th></tr></thead>
@@ -658,23 +689,8 @@ async function publicarAspirantes(corpo, mensagemOk) {
   return r.ok;
 }
 
-function eventosOrdenados() {
-  return (estado.eventos || []).slice().sort((a, b) => (a.data + (a.hora || "")).localeCompare(b.data + (b.hora || "")));
-}
-
-// Eventos que "acontecem" num dia: treinamentos e avisos na data; desafios no lançamento e na entrega.
-function eventosDoDia(iso) {
-  const lista = [];
-  for (const ev of eventosOrdenados()) {
-    if (ev.tipo === "desafio") {
-      if (ev.data === iso) lista.push({ ...eventoParaDiscord(ev), titulo: `Lançamento: ${ev.titulo}`, quando: formatarCurto(iso) });
-      if (ev.entrega === iso) lista.push({ titulo: `Entrega: ${ev.titulo}`, quando: formatarCurto(iso), local: ev.local || "" });
-    } else if (ev.data === iso) {
-      lista.push(eventoParaDiscord(ev));
-    }
-  }
-  return lista;
-}
+const eventosOrdenados = () => R.eventosOrdenados(estado);
+const eventosDoDia = (iso) => R.eventosDoDia(estado, iso);
 
 function cartaoProximos() {
   const hojeLista = eventosDoDia(hoje);
@@ -851,89 +867,15 @@ function calendarioHtml(gerente) {
 }
 
 // ---------- Piloto automático ----------
-const PREFIXO_PILOTO = "Piloto automático: ";
-const UM_DIA = 24 * 60 * 60 * 1000;
-
-function idadeAtribuicao(t) {
-  if (t.atribuidaTs) return Date.now() - t.atribuidaTs;
-  return Math.max(0, diferencaDias(t.atribuidaEm || hoje, hoje)) * UM_DIA;
-}
-
-// Regras que rodam sozinhas: ao abrir o site e a cada minuto com ele aberto.
+const PREFIXO_PILOTO = R.PREFIXO_PILOTO;
+// Regras que rodam sozinhas: ao abrir o site e a cada minuto com ele aberto (e no servidor, uma vez por dia).
 function rodarPiloto() {
-  const pl = estado.piloto;
-  const acoes = [];
-  if (pl.aceite24h) {
-    for (const t of estado.tasks) {
-      if (t.status !== "atribuida" || !t.responsavelId) continue;
-      if (idadeAtribuicao(t) < UM_DIA || t.aceiteCobrado) continue;
-      const antes = primeiroNome(t.responsavelId);
-      // Só repassa se houver para quem: senão mantém com a pessoa e avisa (nunca deixa a task sem dono).
-      const candidato = redistribuir(estado, { ...t, recusadoPor: [...(t.recusadoPor || []), t.responsavelId] }, hoje);
-      if (!candidato) {
-        t.aceiteCobrado = true;
-        acoes.push(`"${t.titulo}" não foi aceita por ${antes} em 24h, mas não há outra pessoa elegível; continua com ${antes} e a equipe foi avisada.`);
-        avisarEquipe({ tipo: "repasse", texto: `${antes}, a task "${t.titulo}" está esperando o seu aceite há mais de 24h.` });
-        continue;
-      }
-      if (t.prazo < hoje) t.prazo = somarDias(hoje, 1);
-      const novo = repassar(t, t.responsavelId, "não aceitou em 24h");
-      acoes.push(`"${t.titulo}" não foi aceita por ${antes} em 24h; repassada para ${primeiroNome(novo)}${t.prazo === somarDias(hoje, 1) ? " com prazo para amanhã" : ""}.`);
-    }
-  }
-  if (pl.atrasadas !== "desligado") {
-    for (const t of estado.tasks) {
-      if (t.status === "concluida" || !t.responsavelId || t.prazo >= hoje || t.atrasoTratado) continue;
-      if (pl.atrasadas === "repassar") {
-        const antes = primeiroNome(t.responsavelId);
-        t.prazo = somarDias(hoje, 1);
-        const novo = repassar(t, t.responsavelId, "atrasada");
-        t.atrasoTratado = true;
-        acoes.push(`"${t.titulo}" estava atrasada com ${antes}; ${novo ? `repassada para ${primeiroNome(novo)} com prazo para amanhã` : "ninguém elegível, ficou para a gerência"}.`);
-      } else {
-        t.atrasoTratado = true;
-        acoes.push(`"${t.titulo}" está atrasada com ${primeiroNome(t.responsavelId)}; a equipe foi avisada.`);
-        avisarEquipe({ tipo: "repasse", texto: `Atenção: "${t.titulo}" está atrasada (prazo ${formatarCurto(t.prazo)}, com ${primeiroNome(t.responsavelId)}).` });
-      }
-    }
-  }
-  for (const a of acoes) registrar(estado, PREFIXO_PILOTO + a);
+  const acoes = R.rodarPiloto(ctx());
   if (acoes.length) persistir();
   return acoes.length;
 }
-
-// Quando um item do cronograma muda de data, as tasks ligadas a ele acompanham.
-function ajustarTasksDoEvento(ev) {
-  if (!estado.piloto.seguirCronograma) return 0;
-  const esperadas = tarefasDoEvento(ev, hoje, 12);
-  let n = 0;
-  for (const t of estado.tasks) {
-    if (t.eventoId !== ev.id || t.status === "concluida") continue;
-    const alvo = esperadas.find((x) => x.tipoId === t.tipoId);
-    if (!alvo || alvo.prazo === t.prazo) continue;
-    const antes = t.prazo;
-    t.prazo = alvo.prazo;
-    delete t.atrasoTratado;
-    n++;
-    const resp = t.responsavelId && membro(t.responsavelId);
-    if (resp && resp.indisponivelAte && resp.indisponivelAte >= t.prazo) {
-      const novo = repassar(t, resp.id, "indisponível na nova data");
-      registrar(estado, `${PREFIXO_PILOTO}"${t.titulo}" mudou de ${formatarCurto(antes)} para ${formatarCurto(t.prazo)}; ${resp.nome.split(" ")[0]} está indisponível, ${novo ? `repassada para ${primeiroNome(novo)}` : "ficou para a gerência"}.`);
-    } else {
-      registrar(estado, `${PREFIXO_PILOTO}"${t.titulo}" acompanhou o cronograma: prazo de ${formatarCurto(antes)} para ${formatarCurto(t.prazo)}.`);
-    }
-  }
-  return n;
-}
-
-function cancelarTasksDoEvento(ev) {
-  if (!estado.piloto.seguirCronograma) return 0;
-  const canceladas = estado.tasks.filter((t) => t.eventoId === ev.id && t.status !== "concluida");
-  if (!canceladas.length) return 0;
-  estado.tasks = estado.tasks.filter((t) => !canceladas.includes(t));
-  registrar(estado, `${PREFIXO_PILOTO}${canceladas.length} task(s) de "${ev.titulo}" canceladas junto com o item.`);
-  return canceladas.length;
-}
+const ajustarTasksDoEvento = (ev) => R.ajustarTasksDoEvento(ctx(), ev);
+const cancelarTasksDoEvento = (ev) => R.cancelarTasksDoEvento(ctx(), ev);
 
 // ---------- Google Sheets ----------
 async function consultarGoogle() {
@@ -991,6 +933,82 @@ function cartaoPiloto() {
     <h3 class="prazo" style="margin-top:14px">O que ele fez</h3>
     ${ultimas.length ? ultimas.map((r) => `<p class="piloto-acao">${esc(r.texto.slice(PREFIXO_PILOTO.length))}</p>`).join("") : `<p class="vazio">Nada ainda.</p>`}
   </div>`;
+}
+
+// ---------- Modo equipe ----------
+function telaCarregandoEquipe() {
+  const cab = `<header class="topo"><div class="topo-dentro"><div class="marca">repasse<span>.</span><small>PS · equipe</small></div></div></header>`;
+  if (equipe.iniciar)
+    return cab + `<main><section class="entrada-topo"><h1>Vamos começar o PS da equipe.</h1>
+      <p class="sub">Este é o primeiro acesso da gerência. Escolha como começar; dá para mudar tudo depois.</p></section>
+      <div class="grade grade-2">
+        <button class="perfil-cartao gerente" data-acao="iniciar-equipe" data-id="exemplo"><b>Começar com a equipe de exemplo</b><span>Membros, cronograma e tasks fictícios, para testar com o time.</span></button>
+        <button class="perfil-cartao" data-acao="iniciar-equipe" data-id="vazio"><b>Começar do zero</b><span>Só você. Cadastre a equipe e cole o planejamento do PS.</span></button>
+      </div></main>`;
+  if (equipe.erro)
+    return cab + `<main><section class="entrada-topo"><h1>Não foi possível abrir o PS da equipe.</h1>
+      <p class="sub">${esc(equipe.erro)}</p>
+      <div class="acoes"><button class="botao primario" data-acao="tentar-equipe">Tentar de novo</button><button class="botao" data-acao="sair-equipe">Usar a demonstração</button></div></section></main>`;
+  return cab + `<main><p class="sub" style="margin-top:40px">Carregando o PS da equipe…</p></main>`;
+}
+
+async function iniciarEquipe() {
+  equipe.erro = null;
+  render();
+  try {
+    const d = await carregarRemoto(equipe.codigo);
+    equipe.perfil = d.perfil;
+    if (!d.estado) {
+      equipe.iniciar = true;
+      equipe.perfil = null;
+      render();
+      return false;
+    }
+    estado = d.estado;
+    if (!estado.piloto) estado.piloto = pilotoPadrao();
+    equipe.versao = d.versao;
+    ui.perfilId = d.perfil.membroId;
+    ui.aba = null;
+    completarExplicacoes();
+    return true;
+  } catch (e) {
+    equipe.erro =
+      e.status === 401
+        ? "Este link de acesso não é válido. Peça um novo link à gerência do PS."
+        : e.status === 404
+          ? "A gerência ainda não iniciou o PS. Tente de novo mais tarde."
+          : e.status === 503
+            ? "O modo equipe ainda não foi configurado na Vercel."
+            : `Erro: ${e.message}`;
+    render();
+    return false;
+  }
+}
+
+function blocoModoEquipe() {
+  return `<details class="secao" style="margin:0 0 20px"><summary>Usar com a equipe de verdade <span class="prazo">hoje: demonstração neste navegador</span></summary>
+    <p class="nota" style="margin-top:0">No modo equipe, todos veem os mesmos dados e cada membro entra pelo seu próprio link. Para ativar: conecte o Upstash na Vercel, defina <code>PS_CODIGO_GERENTE</code> e abra <code>${esc(location.origin)}/?c=SEU_CÓDIGO</code>.</p>
+  </details>`;
+}
+
+function blocoLinks() {
+  const base = `${location.origin}${location.pathname}`;
+  const linhas = estado.membros
+    .filter((m) => m.papel === "membro" && m.ativo)
+    .map(
+      (m) => `<div class="link-linha"><span><b>${esc(m.nome)}</b> <small class="prazo">${esc(m.area)}</small></span>
+        <code class="link-codigo">${m.codigo ? esc(`${base}?c=${m.codigo}`) : "gerando…"}</code>
+        <span class="acoes"><button class="botao pequeno" data-acao="copiar-link" data-id="${m.id}">Copiar</button>
+        <button class="botao texto" data-acao="novo-link" data-id="${m.id}">Novo link</button></span></div>`
+    )
+    .join("");
+  const eu = membro(ui.perfilId);
+  return `<details class="secao" style="margin:0 0 20px"><summary>Links de acesso da equipe <span class="prazo">cada membro entra pelo seu link, sem senha</span></summary>
+    ${eu ? `<div class="campos" style="margin-bottom:12px"><div><label>Seu nome (gerência)</label><input type="text" data-campo="nome-gerente" value="${esc(eu.nome)}"></div></div>` : ""}
+    <p class="nota" style="margin-top:0">Mande a cada pessoa o link dela (no privado). "Novo link" invalida o anterior. O link da gerência usa o código definido na Vercel.</p>
+    ${linhas}
+    <div class="acoes" style="margin-top:12px"><button class="botao pequeno" data-acao="copiar-todos-links">Copiar mensagem com todos os links</button></div>
+  </details>`;
 }
 
 // ---------- Gerente: montar o PS a partir do planejamento ----------
@@ -1293,6 +1311,7 @@ const acoes = {
       capacidadeSemanal: Number(document.getElementById("novo-cap").value) || 6,
       indisponivelAte: null,
       ativo: true,
+      codigo: novoCodigo(),
     };
     estado.membros.push(m);
     registrar(estado, `${nome} entrou na equipe do PS (${m.area}).`);
@@ -1435,6 +1454,67 @@ const acoes = {
   },
 
 
+
+  // Modo equipe
+  "sair-equipe"() {
+    esquecerCodigo();
+    location.href = location.pathname;
+  },
+  async "tentar-equipe"() {
+    if (await iniciarEquipe()) iniciarRotinas();
+  },
+  async "iniciar-equipe"(el) {
+    let novo;
+    if (el.dataset.id === "exemplo") novo = dadosDemonstracao(hoje);
+    else {
+      const base = dadosDemonstracao(hoje);
+      novo = { ...base, membros: base.membros.filter((m) => m.papel === "gerente").map((m) => ({ ...m, nome: "Gerência do PS" })), tasks: [], eventos: [], registro: [] };
+    }
+    garantirCodigos(novo);
+    registrar(novo, "PS da equipe iniciado.");
+    const r = await salvarRemoto(equipe.codigo, novo, 0);
+    if (!r.ok) return toast(`Não foi possível iniciar: ${r.erro || "alguém já iniciou"}`);
+    equipe.iniciar = false;
+    if (await iniciarEquipe()) {
+      iniciarRotinas();
+      ui.aba = "equipe";
+      render();
+      toast("PS iniciado. Abra 'Links de acesso da equipe' para mandar o link de cada membro.");
+    }
+  },
+  async "copiar-link"(el) {
+    const m = membro(el.dataset.id);
+    const link = `${location.origin}${location.pathname}?c=${m.codigo}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      toast(`Link de ${m.nome.split(" ")[0]} copiado.`);
+    } catch (e) {
+      window.prompt("Copie o link:", link);
+    }
+  },
+  "novo-link"(el) {
+    const m = membro(el.dataset.id);
+    if (!confirm(`Gerar um novo link para ${m.nome}? O link anterior deixa de funcionar.`)) return;
+    m.codigo = novoCodigo();
+    registrar(estado, `Novo link de acesso gerado para ${m.nome.split(" ")[0]}.`);
+    persistir();
+    render();
+  },
+  async "copiar-todos-links"() {
+    const base = `${location.origin}${location.pathname}`;
+    const texto =
+      "Links do repasse (cada um abre direto nas suas tasks do PS; não compartilhe o seu):\n\n" +
+      estado.membros
+        .filter((m) => m.papel === "membro" && m.ativo && m.codigo)
+        .map((m) => `• ${m.nome}: ${base}?c=${m.codigo}`)
+        .join("\n");
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast("Mensagem copiada.");
+    } catch (e) {
+      window.prompt("Copie a mensagem:", texto);
+    }
+  },
   // Montar o PS a partir do planejamento
   "abrir-plano"() {
     ui.plano = { passo: "texto", texto: "", nAspirantes: 12, substituir: true, publicar: true, lido: null, resultado: null };
@@ -1638,6 +1718,14 @@ const acoes = {
 
 // Campos editáveis
 const campos = {
+  "nome-gerente"(el) {
+    const eu = membro(ui.perfilId);
+    if (eu && el.value.trim()) {
+      eu.nome = el.value.trim();
+      persistir();
+    }
+    return true;
+  },
   piloto(el) {
     const k = el.dataset.chave;
     estado.piloto[k] = el.type === "checkbox" ? el.checked : el.value;
@@ -1775,15 +1863,24 @@ document.addEventListener("keydown", (ev) => {
   }
 });
 
-const acoesIniciais = rodarPiloto();
-render();
-if (acoesIniciais && ui.perfilId && membro(ui.perfilId)?.papel === "gerente")
-  setTimeout(() => toast(`Piloto automático: ${acoesIniciais} ação(ões) desde a última visita. Veja no painel.`), 400);
-consultarGoogle();
-setInterval(() => {
-  const n = rodarPiloto();
-  if (n) {
-    render();
-    toast(`Piloto automático: ${n} ação(ões).`);
-  }
-}, 60000);
+function iniciarRotinas() {
+  const acoesIniciais = rodarPiloto();
+  render();
+  if (acoesIniciais && ui.perfilId && membro(ui.perfilId)?.papel === "gerente")
+    setTimeout(() => toast(`Piloto automático: ${acoesIniciais} ação(ões) desde a última visita. Veja no painel.`), 400);
+  consultarGoogle();
+  setInterval(() => {
+    const n = rodarPiloto();
+    if (n) {
+      render();
+      toast(`Piloto automático: ${n} ação(ões).`);
+    }
+  }, 60000);
+  if (equipe.ativo) setInterval(buscarMudancas, 10000);
+}
+
+if (equipe.ativo) {
+  iniciarEquipe().then((ok) => ok && iniciarRotinas());
+} else {
+  iniciarRotinas();
+}
