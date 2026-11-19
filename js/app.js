@@ -49,6 +49,9 @@ const ui = {
   plano: null, // { passo: "texto" | "lendo" | "revisao", texto, nAspirantes, substituir, publicar, lido, resultado }
 };
 
+// Comando direto: a gerência escreve o pedido e o repasse já cria e distribui (com "Desfazer" depois).
+const comando = { texto: "", carregando: false, resultado: null, passoAPasso: false };
+
 function novaVazia() {
   return { passo: 1, texto: "", pedido: null, proposta: null, carregando: false, criadas: null };
 }
@@ -340,9 +343,9 @@ function telaPainel() {
 
   return `
   <div class="linha-titulo"><div><h1>Painel do PS</h1><p class="sub" style="margin:0">${formatarCurto(hoje)}</p></div>
-  <div class="acoes"><button class="botao" data-acao="abrir-plano">Montar o PS a partir do planejamento</button>
-  <button class="botao primario" data-acao="aba" data-id="nova">+ Nova task</button></div></div>
-  <div style="height:20px"></div>
+  <div class="acoes"><button class="botao" data-acao="abrir-plano">Montar o PS a partir do planejamento</button></div></div>
+  <div style="height:16px"></div>
+  ${caixaComando(false)}${resultadoComando()}
   <div class="grade grade-3-1 bloco">
     <div>
       <div class="cartao">
@@ -409,10 +412,56 @@ const EXEMPLOS = [
   "Consolidar as notas de todos os desafios para a deliberação até 25/11",
 ];
 
+function caixaComando(foco) {
+  return `<div class="cartao comando">
+    <label for="comando">O que precisa ser feito?</label>
+    <div class="comando-linha">
+      <textarea id="comando" data-campo="texto-comando" rows="2" placeholder="Ex.: chegaram 14 entregas do desafio de Marketing, corrigir até sexta" ${foco ? "autofocus" : ""}>${esc(comando.texto)}</textarea>
+      <button class="botao primario" data-acao="executar-comando" ${comando.carregando ? "disabled" : ""}>${comando.carregando ? "Distribuindo…" : "Criar e distribuir"}</button>
+    </div>
+    <div class="exemplos">${EXEMPLOS.map((e, i) => `<button class="exemplo" data-acao="exemplo-comando" data-i="${i}">${esc(e)}</button>`).join("")}</div>
+    <p class="nota">Enter cria na hora. O repasse entende o pedido, escolhe quem faz pela área e pela folga, e avisa cada pessoa. Se não gostar, é só desfazer.</p>
+  </div>`;
+}
+
+function resultadoComando() {
+  const r = comando.resultado;
+  if (!r) return "";
+  if (r.erro) return `<div class="cartao resultado-comando erro"><p><b>Não criei nada.</b> ${esc(r.erro)}</p>
+    <div class="acoes"><button class="botao" data-acao="ajustar-comando">Preencher passo a passo</button></div></div>`;
+  const vivas = r.ids.map((id) => estado.tasks.find((t) => t.id === id)).filter(Boolean);
+  if (!vivas.length) return "";
+  const p = r.pedido;
+  const linhas = vivas
+    .map((t) => {
+      const m = membro(t.responsavelId);
+      return `<li><b>${m ? esc(m.nome) : "Sem responsável"}</b>${m ? ` <small>${esc(m.area)}</small>` : ""} · ${esc(t.titulo)} · ${horas(t.esforcoH)}${
+        r.motivos[t.id] ? `<br><small class="suave">${esc(r.motivos[t.id])}</small>` : ""
+      }</li>`;
+    })
+    .join("");
+  const aceitas = vivas.some((t) => t.status !== "atribuida");
+  return `<div class="cartao resultado-comando">
+    <div class="resultado-cab"><h2>Criada e distribuída</h2><span class="etiqueta ok">${vivas.length} ${vivas.length > 1 ? "pessoas avisadas" : "pessoa avisada"}</span></div>
+    <p class="entendido">${esc(tipo(p.tipoId) ? tipo(p.tipoId).nome : "Task")} · ${esc(p.area)} · prazo ${formatarCurto(p.prazo)}${p.quantidade > 1 ? ` · ${p.quantidade} unidades` : ""} · ${horas(p.quantidade * p.esforcoPorUnidadeH)} no total
+      <small class="suave">(${p.fonte === "ia" ? "entendido pela IA" : "entendido pelas regras locais"}${p.prazoInferido ? ", prazo sugerido" : ""})</small></p>
+    <ul class="lista-distribuicao">${linhas}</ul>
+    <div class="acoes">
+      ${aceitas ? "" : `<button class="botao" data-acao="desfazer-comando">Desfazer</button>`}
+      <button class="botao texto" data-acao="ajustar-comando">${aceitas ? "Ajustar em uma nova task" : "Desfazer e ajustar"}</button>
+    </div>
+  </div>`;
+}
+
 function telaNova() {
+  if (!comando.passoAPasso) {
+    return `<h1>Nova task</h1><p class="sub">Escreva como mandaria no grupo. O repasse cria, distribui e avisa na hora.</p>
+      ${caixaComando(true)}${resultadoComando()}
+      <p class="nota"><button class="botao texto" data-acao="passo-a-passo">Prefere conferir antes de distribuir? Preencher passo a passo</button></p>`;
+  }
   const n = ui.nova;
   const passos = ["Pedido", "Conferir", "Distribuição"];
-  const cab = `<h1>Nova task</h1><p class="sub">Escreva como mandaria no grupo. O repasse entende, calcula quem faz e espera sua confirmação.</p>
+  const cab = `<h1>Nova task · passo a passo</h1><p class="sub">Confira o que o repasse entendeu e quem vai fazer antes de distribuir. <button class="botao texto" data-acao="modo-comando">Voltar ao comando direto</button></p>
   <div class="passos">${passos
     .map((p, i) => `<div class="passo ${n.passo > i + 1 ? "feito" : n.passo === i + 1 ? "atual" : ""}"><b>${i + 1}</b>${p}</div>`)
     .join("")}</div>`;
@@ -545,6 +594,51 @@ function textoAviso(criadas, pedido) {
       `• ${membro(id).nome.split(" ")[0]}: ${t0 && t0.divisivel && pedido.quantidade > 1 ? `${v.unidades} de ${pedido.quantidade} · ` : ""}${horas(v.horas)}`
   );
   return `*Nova task do PS:* ${pedido.titulo}\nPrazo: ${formatarCurto(pedido.prazo)}\n\n${linhas.join("\n")}\n\nAceite ou repasse no repasse: ${location.origin}${location.pathname}`;
+}
+
+// Cria as tasks de um pedido já distribuído e avisa a equipe. Devolve as tasks criadas.
+function criarTasks(pedido, proposta, origem, comoFoi) {
+  const porPessoa = new Map();
+  for (const parte of proposta.partes) {
+    const atual = porPessoa.get(parte.membroId) || { unidades: 0, esforcoH: 0 };
+    atual.unidades += parte.unidades;
+    atual.esforcoH += parte.esforcoH;
+    porPessoa.set(parte.membroId, atual);
+  }
+  const grupoId = novoId("g");
+  const dividida = proposta.divisivel && proposta.quantidade > 1 && porPessoa.size > 1;
+  const criadas = [];
+  for (const [membroId, v] of porPessoa) {
+    const t = {
+      id: novoId("t"),
+      grupoId,
+      titulo: dividida ? `${pedido.titulo} (${v.unidades} de ${proposta.quantidade})` : pedido.titulo,
+      tipoId: pedido.tipoId,
+      area: pedido.area,
+      prazo: pedido.prazo,
+      esforcoH: Math.round(v.esforcoH * 100) / 100,
+      unidades: v.unidades,
+      responsavelId: null,
+      status: "atribuida",
+      recusadoPor: [],
+      historico: [],
+      criadaEm: hoje,
+      origem,
+      eventoId: pedido.eventoId || null,
+    };
+    estado.tasks.push(t);
+    atribuirTask(t, membroId, `Atribuída a ${primeiroNome(membroId)} ${comoFoi}.`);
+    criadas.push(t);
+  }
+  registrar(estado, `Nova task "${pedido.titulo}" distribuída: ${criadas.map((t) => `${primeiroNome(t.responsavelId)} (${horas(t.esforcoH)})`).join(", ")}.`);
+  persistir();
+  avisarEquipe({
+    tipo: "task",
+    titulo: pedido.titulo,
+    prazo: formatarCurto(pedido.prazo),
+    partes: criadas.map((t) => `${primeiroNome(t.responsavelId)}: ${dividida ? `${t.unidades} de ${proposta.quantidade} · ` : ""}${horas(t.esforcoH)}`),
+  });
+  return criadas;
 }
 
 function telaCriadas() {
@@ -1344,53 +1438,87 @@ const acoes = {
   },
   confirmar() {
     const { pedido, proposta } = ui.nova;
-    // junta partes que acabaram com a mesma pessoa após trocas manuais
-    const porPessoa = new Map();
-    for (const parte of proposta.partes) {
-      const atual = porPessoa.get(parte.membroId) || { unidades: 0, esforcoH: 0 };
-      atual.unidades += parte.unidades;
-      atual.esforcoH += parte.esforcoH;
-      porPessoa.set(parte.membroId, atual);
-    }
-    const grupoId = novoId("g");
-    const dividida = proposta.divisivel && proposta.quantidade > 1 && porPessoa.size > 1;
-    const criadas = [];
-    for (const [membroId, v] of porPessoa) {
-      const t = {
-        id: novoId("t"),
-        grupoId,
-        titulo: dividida ? `${pedido.titulo} (${v.unidades} de ${proposta.quantidade})` : pedido.titulo,
-        tipoId: pedido.tipoId,
-        area: pedido.area,
-        prazo: pedido.prazo,
-        esforcoH: Math.round(v.esforcoH * 100) / 100,
-        unidades: v.unidades,
-        responsavelId: null,
-        status: "atribuida",
-        recusadoPor: [],
-        historico: [],
-        criadaEm: hoje,
-        origem: ui.nova.texto,
-        eventoId: pedido.eventoId || null,
-      };
-      estado.tasks.push(t);
-      atribuirTask(t, membroId, `Atribuída a ${primeiroNome(membroId)} pelo repasse e confirmada pela gerência.`);
-      criadas.push(t);
-    }
-    registrar(
-      estado,
-      `Nova task "${pedido.titulo}" distribuída: ${criadas.map((t) => `${primeiroNome(t.responsavelId)} (${horas(t.esforcoH)})`).join(", ")}.`
-    );
-    persistir();
-    avisarEquipe({
-      tipo: "task",
-      titulo: pedido.titulo,
-      prazo: formatarCurto(pedido.prazo),
-      partes: criadas.map((t) => `${primeiroNome(t.responsavelId)}: ${dividida ? `${t.unidades} de ${proposta.quantidade} · ` : ""}${horas(t.esforcoH)}`),
-    });
+    const criadas = criarTasks(pedido, proposta, ui.nova.texto, "pelo repasse e confirmada pela gerência");
     ui.nova.criadas = { lista: criadas, pedido: { ...pedido } };
     render();
     window.scrollTo(0, 0);
+  },
+  "exemplo-comando"(el) {
+    comando.texto = EXEMPLOS[Number(el.dataset.i)];
+    render();
+    const caixa = document.getElementById("comando");
+    if (caixa) caixa.focus();
+  },
+  async "executar-comando"() {
+    const texto = comando.texto.trim();
+    if (!texto) return toast("Escreva o que precisa ser feito.");
+    if (comando.carregando) return;
+    comando.carregando = true;
+    render();
+    const pedido = await interpretar(texto, estado, hoje);
+    comando.carregando = false;
+    const proposta = pedido.titulo && pedido.prazo ? proporDistribuicao(estado, pedido, hoje) : null;
+    if (!proposta || !proposta.partes.length) {
+      comando.resultado = {
+        erro: !proposta ? "Não entendi o prazo ou o que fazer. Tente de novo com mais detalhes, ou preencha passo a passo." : "Ninguém da equipe pode receber esta task agora (área, ausência ou recusa).",
+        pedido,
+        texto,
+      };
+      render();
+      return;
+    }
+    const motivos = {};
+    const criadas = criarTasks(pedido, proposta, texto, "automaticamente pelo repasse");
+    for (const t of criadas) {
+      const parte = proposta.partes.find((x) => x.membroId === t.responsavelId);
+      if (parte && parte.motivos) motivos[t.id] = parte.motivos.slice(0, 3).join(" · ");
+    }
+    comando.resultado = { ids: criadas.map((t) => t.id), pedido: { ...pedido }, texto, motivos };
+    comando.texto = "";
+    render();
+    const caixa = document.getElementById("comando");
+    if (caixa) caixa.focus();
+    toast(`Pronto: "${pedido.titulo}" foi para ${criadas.map((t) => primeiroNome(t.responsavelId)).join(", ")}.`);
+  },
+  "desfazer-comando"() {
+    const r = comando.resultado;
+    if (!r || !r.ids) return;
+    const ids = new Set(r.ids);
+    const removidas = estado.tasks.filter((t) => ids.has(t.id) && t.status === "atribuida");
+    estado.tasks = estado.tasks.filter((t) => !removidas.includes(t));
+    registrar(estado, `Gerência desfez a task "${r.pedido.titulo}".`);
+    persistir();
+    avisarEquipe({ tipo: "repasse", texto: `A task "${r.pedido.titulo}" foi desfeita pela gerência. Pode desconsiderar o aviso anterior.` });
+    comando.texto = r.texto;
+    comando.resultado = null;
+    render();
+    toast("Desfeito. O pedido voltou para a caixa, se quiser ajustar.");
+    return removidas.length;
+  },
+  "ajustar-comando"() {
+    const r = comando.resultado;
+    if (r && r.ids) acoes["desfazer-comando"]();
+    ui.nova = novaVazia();
+    if (r) {
+      ui.nova.texto = r.texto;
+      ui.nova.pedido = { ...r.pedido };
+      ui.nova.passo = 2;
+    }
+    comando.resultado = null;
+    comando.passoAPasso = true;
+    ui.aba = "nova";
+    render();
+    window.scrollTo(0, 0);
+  },
+  "passo-a-passo"() {
+    comando.passoAPasso = true;
+    ui.nova = novaVazia();
+    ui.nova.texto = comando.texto;
+    render();
+  },
+  "modo-comando"() {
+    comando.passoAPasso = false;
+    render();
   },
   async "copiar-aviso"() {
     const txt = document.getElementById("aviso").value;
@@ -2028,6 +2156,7 @@ document.addEventListener("click", (ev) => {
 document.addEventListener("input", (ev) => {
   const el = ev.target;
   if (el.dataset && el.dataset.campo === "texto-pedido") campos["texto-pedido"](el);
+  if (el.dataset && el.dataset.campo === "texto-comando") comando.texto = el.value;
   if (el.dataset && el.dataset.campo === "plano-texto" && ui.plano) ui.plano.texto = el.value;
 });
 
@@ -2041,7 +2170,7 @@ document.addEventListener("change", (ev) => {
     return;
   }
   const fn = el.dataset && campos[el.dataset.campo];
-  if (fn && el.dataset.campo !== "texto-pedido" && el.dataset.campo !== "plano-texto") {
+  if (fn && el.dataset.campo !== "texto-pedido" && el.dataset.campo !== "plano-texto" && el.dataset.campo !== "texto-comando") {
     const rerender = fn(el);
     if (rerender) render();
   }
@@ -2049,6 +2178,11 @@ document.addEventListener("change", (ev) => {
 
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && ev.target.id === "pedido") acoes.interpretar();
+  if (ev.key === "Enter" && !ev.shiftKey && ev.target.id === "comando") {
+    ev.preventDefault();
+    comando.texto = ev.target.value;
+    acoes["executar-comando"]();
+  }
   if (ev.key === "Enter" && ev.target.id === "motivo") {
     const btn = document.querySelector('[data-acao="confirmar-recusa"]');
     if (btn) acoes["confirmar-recusa"](btn);

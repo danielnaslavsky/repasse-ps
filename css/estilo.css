@@ -406,3 +406,17 @@ small.suave, .suave { color: var(--suave); }
   .abas::-webkit-scrollbar { display: none; }
   .aba { flex: none; white-space: nowrap; }
 }
+
+/* Comando direto */
+.comando .comando-linha { display: flex; gap: 10px; align-items: stretch; }
+.comando textarea { flex: 1; min-height: 52px; resize: vertical; }
+.comando .comando-linha .botao { white-space: nowrap; }
+@media (max-width: 600px) { .comando .comando-linha { flex-direction: column; } }
+.resultado-comando { border-left: 4px solid var(--verde, #0e5a47); }
+.resultado-comando.erro { border-left-color: var(--vermelho); }
+.resultado-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.resultado-cab h2 { margin: 0; }
+.etiqueta.ok { background: #e3efe9; color: #0e5a47; }
+.entendido { margin: 8px 0; }
+.lista-distribuicao { margin: 8px 0 12px; padding-left: 18px; }
+.lista-distribuicao li { margin: 6px 0; line-height: 1.4; }

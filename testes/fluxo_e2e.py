@@ -2,6 +2,13 @@
 # Requer: pip install playwright && playwright install chromium
 import json
 from playwright.sync_api import sync_playwright
+
+def fechar_previa(pg):
+    """Na demonstração, publicar no Discord abre uma prévia; fecha para seguir o teste."""
+    try:
+        if pg.locator(".dc-janela").count(): pg.click(".dc-cab >> text=Fechar")
+    except Exception: pass
+
 erros=[]; discord=[]
 with sync_playwright() as p:
     b=p.chromium.launch(args=["--no-sandbox"])
@@ -14,9 +21,9 @@ with sync_playwright() as p:
     pg.click("text=Marina Costa")
     pg.click("text=Resumo com IA"); pg.wait_for_selector(".resumo-caixa")
     pg.screenshot(path="capturas/c1-painel.png", full_page=True)
-    pg.click("button.aba:has-text('Nova task')"); pg.click(".exemplo >> nth=0"); pg.click("text=Interpretar pedido")
+    pg.click("button.aba:has-text('Nova task')"); pg.click("text=Preencher passo a passo"); pg.click(".exemplo >> nth=0"); pg.click("text=Interpretar pedido")
     pg.wait_for_selector("text=Calcular distribuição"); pg.click("text=Calcular distribuição"); pg.click("text=Confirmar e avisar a equipe"); pg.wait_for_selector("text=Pronto")
-    pg.click("button.aba:has-text('Cronograma')"); pg.click("text=Publicar no Discord"); pg.wait_for_timeout(200)
+    pg.click("button.aba:has-text('Cronograma')"); pg.click("text=Publicar no Discord"); pg.wait_for_timeout(500); fechar_previa(pg); pg.wait_for_timeout(200)
     pg.click("[data-acao=sugestoes-evento] >> nth=5"); pg.click("[data-acao=distribuir-sugestao] >> nth=0"); pg.wait_for_selector("text=Gerada a partir do cronograma")
     pg.click("button.aba:has-text('Cronograma')"); pg.click("[data-acao=crono-vista][data-id=calendario]")
     pg.screenshot(path="capturas/c2-crono-cal.png", full_page=True)
@@ -26,7 +33,7 @@ with sync_playwright() as p:
     pg.screenshot(path="capturas/c4-membro.png", full_page=True)
     pg.click("button:has-text('Não consigo') >> nth=0"); pg.fill("#motivo","prova"); pg.click("button:text-is('Repassar')"); pg.wait_for_timeout(200)
     pg.click("text=Trocar perfil"); pg.click("text=Carla Menezes")
-    pg.click("text=Vou me ausentar"); pg.fill("#minha-ausencia","2026-12-01"); pg.click("text=Salvar")
+    pg.click("text=Vou me ausentar"); pg.fill("#minha-ausencia","2026-12-01"); pg.click("text=Salvar"); pg.wait_for_timeout(500); fechar_previa(pg)
     pg.screenshot(path="capturas/c5-ausencia.png", full_page=True)
     if pg.locator("text=Repassar estas tasks").count(): pg.click("text=Repassar estas tasks")
     pg.click("text=Ver calendário"); pg.wait_for_selector(".cal")

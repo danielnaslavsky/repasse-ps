@@ -25,6 +25,10 @@ Num PS, a gerência distribui dezenas de tasks curtas e com prazo apertado: corr
 4. **Repassa.** Quem não pode aperta "Não consigo". A task vai automaticamente para a próxima pessoa mais bem pontuada, e o histórico registra o motivo. Quem avisa uma ausência pode repassar de uma vez todas as tasks com prazo nesse período.
 5. **Acompanha.** O painel mostra tasks atrasadas, gente acima da capacidade e a carga da semana. Um botão gera, com IA, um resumo do dia: o que está em risco e o que fazer hoje.
 
+## Criar uma task com um comando
+
+No painel e na aba Nova task, a gerência escreve o pedido como mandaria no grupo ("chegaram 14 entregas do desafio de Marketing, corrigir até sexta") e aperta Enter. O repasse entende o pedido (IA, com regras locais de reserva), escolhe quem faz pela área, pela folga na semana e pelo rodízio, cria as tasks e avisa cada pessoa, sem tela de confirmação. Logo abaixo aparece o que foi entendido, quem recebeu e por quê, com **Desfazer** (enquanto ninguém aceitou) e **Desfazer e ajustar**, que abre o pedido no modo passo a passo. Quem preferir conferir antes de distribuir ainda pode usar "Preencher passo a passo".
+
 ## Montar o PS a partir do planejamento
 
 A gerência cola o texto de como o PS vai ser estruturado (ou abre um .txt) e informa quantos aspirantes entregam cada desafio. A IA extrai o cronograma: cada desafio com lançamento e entrega, cada treinamento síncrono com data e horário, cada aviso. Para cada item, o repasse cria as tasks da equipe e distribui todas de uma vez, equilibrando a carga semana a semana. A gerência revisa numa prévia (pode excluir itens e trocar responsáveis) e confirma: o cronograma, o calendário e as tasks de cada membro ficam prontos, e o cronograma pode ir direto para o Discord dos aspirantes.

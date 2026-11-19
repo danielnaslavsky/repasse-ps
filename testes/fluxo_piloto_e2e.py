@@ -2,6 +2,13 @@
 # Requer: pip install playwright && playwright install chromium
 import json
 from playwright.sync_api import sync_playwright
+
+def fechar_previa(pg):
+    """Na demonstração, publicar no Discord abre uma prévia; fecha para seguir o teste."""
+    try:
+        if pg.locator(".dc-janela").count(): pg.click(".dc-cab >> text=Fechar")
+    except Exception: pass
+
 erros=[]; google=[]; discord=[]
 with sync_playwright() as p:
     b=p.chromium.launch(args=["--no-sandbox"])
@@ -22,12 +29,12 @@ with sync_playwright() as p:
     pg.click("text=Atualizar planilha"); pg.wait_for_timeout(300)
     # muda data de um treinamento com tasks: Treinamento de Produto (seed task preparar Produto has no eventoId) -> use plan
     pg.click("text=Montar a partir do planejamento"); pg.click("text=Usar um exemplo"); pg.click("text=Gerar plano"); pg.wait_for_selector("text=O que cada um vai fazer")
-    pg.click("text=Confirmar e criar tudo"); pg.wait_for_selector(".cal"); pg.wait_for_timeout(300)
+    pg.click("text=Confirmar e criar tudo"); pg.wait_for_selector(".cal"); pg.wait_for_timeout(500); fechar_previa(pg); pg.wait_for_timeout(300)
     pg.click("[data-acao=crono-vista][data-id=lista]")
     pg.click("[data-acao=editar-evento] >> nth=2")
     val=pg.input_value("#ev-data"); print("data antes", val)
-    pg.fill("#ev-data", "2026-11-27"); pg.click("[data-acao=salvar-evento]"); pg.wait_for_timeout(300)
-    pg.click("[data-acao=excluir-evento] >> nth=-1"); pg.wait_for_timeout(300)
+    pg.fill("#ev-data", "2026-11-27"); pg.click("[data-acao=salvar-evento]"); pg.wait_for_timeout(500); fechar_previa(pg); pg.wait_for_timeout(300)
+    pg.click("[data-acao=excluir-evento] >> nth=-1"); pg.wait_for_timeout(500); fechar_previa(pg); pg.wait_for_timeout(300)
     pg.click("button.aba:has-text('Painel')")
     pg.screenshot(path="capturas/e2-painel.png", full_page=True)
     print(pg.inner_text(".cartao:has(h2:text('Piloto automático'))")[-700:])
