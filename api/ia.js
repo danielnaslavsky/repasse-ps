@@ -88,6 +88,31 @@ Responda apenas com JSON: {"texto": string}`;
 // Modelos tentados em ordem. Quando o Google está sobrecarregado (503) ou limita (429), o servidor
 // tenta de novo e passa para o próximo modelo, sempre dentro do tempo que a página espera.
 const MODELOS_RESERVA = ["gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
+let modelosDaConta = { lista: null, em: 0 };
+
+// Pergunta ao Google quais modelos esta chave pode usar (guardado por 1 hora).
+async function listarModelos(chave) {
+  if (modelosDaConta.lista && Date.now() - modelosDaConta.em < 3600e3) return modelosDaConta.lista;
+  try {
+    const controle = new AbortController();
+    const timer = setTimeout(() => controle.abort(), 3000);
+    const resp = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": chave }, signal: controle.signal });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const dados = await resp.json();
+    const nomes = (dados.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map((m) => String(m.name || "").replace(/^models\//, ""))
+      .filter((n) => /flash/.test(n) && !/image|tts|audio|live|embed|vision|thinking|exp|preview/.test(n));
+    // flash-lite primeiro (mais rápido), depois flash; "-latest" antes das versões fixas
+    const nota = (n) => (/lite/.test(n) ? 0 : 10) + (/latest/.test(n) ? 0 : 1);
+    nomes.sort((a, b) => nota(a) - nota(b) || b.localeCompare(a));
+    modelosDaConta = { lista: nomes, em: Date.now() };
+    return nomes;
+  } catch (e) {
+    return null;
+  }
+}
 const PASSAGEIRO = new Set([429, 500, 502, 503, 504]);
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -143,10 +168,12 @@ async function chamarGemini(prompt, { orcamentoMs = 18000 } = {}) {
     throw erro;
   }
   const principal = process.env.GEMINI_MODEL || MODELO_PADRAO;
-  // o principal tem duas chances; os de reserva, uma cada
-  const tentativas = [principal, principal, ...MODELOS_RESERVA.filter((m) => m !== principal)];
   const inicio = Date.now();
   let ultimo = null;
+  let primeiroPassageiro = null;
+  // o principal tem duas chances; os de reserva (da lista da conta, quando der), uma cada
+  let tentativas = [principal, principal];
+  let reservaCarregada = false;
   for (let i = 0; i < tentativas.length; i++) {
     const restante = orcamentoMs - (Date.now() - inicio);
     if (restante < 1500) break;
@@ -156,13 +183,21 @@ async function chamarGemini(prompt, { orcamentoMs = 18000 } = {}) {
     } catch (e) {
       ultimo = e;
       const codigo = e.codigoGoogle;
+      if (codigo && PASSAGEIRO.has(codigo) && !primeiroPassageiro) primeiroPassageiro = e;
       // erro que não passa sozinho (chave inválida, pedido malformado): não adianta insistir
       if (codigo && !PASSAGEIRO.has(codigo) && codigo !== 404) break;
       if (!codigo && !(e instanceof SyntaxError) && e.message !== "Resposta vazia do Gemini") break;
       if (i === 0) await espera(700);
+      if (i === tentativas.length - 1 && !reservaCarregada) {
+        reservaCarregada = true;
+        const daConta = await listarModelos(chave);
+        const reserva = (daConta && daConta.length ? daConta : MODELOS_RESERVA).filter((m) => m !== principal).slice(0, 3);
+        tentativas = tentativas.concat(reserva);
+      }
     }
   }
-  throw ultimo || new Error("IA indisponível");
+  // mostra o motivo real (sobrecarga), não o 404 de um modelo de reserva
+  throw primeiroPassageiro || ultimo || new Error("IA indisponível");
 }
 
 module.exports = async function handler(req, res) {
@@ -172,9 +207,11 @@ module.exports = async function handler(req, res) {
     const modelo = process.env.GEMINI_MODEL || MODELO_PADRAO;
     try {
       await chamarGemini('Responda apenas com JSON: {"ok": true}');
-      res.status(200).json({ ok: true, chaveConfigurada: true, modelo, ms: Date.now() - inicio });
+      const disponiveis = req.query.modelos ? await listarModelos(process.env.GEMINI_API_KEY) : undefined;
+      res.status(200).json({ ok: true, chaveConfigurada: true, modelo, ms: Date.now() - inicio, reserva: disponiveis });
     } catch (e) {
-      res.status(200).json({ ok: false, chaveConfigurada: !!process.env.GEMINI_API_KEY, modelo, ms: Date.now() - inicio, erro: e.message });
+      const disponiveis = req.query.modelos ? await listarModelos(process.env.GEMINI_API_KEY) : undefined;
+      res.status(200).json({ ok: false, chaveConfigurada: !!process.env.GEMINI_API_KEY, modelo, ms: Date.now() - inicio, erro: e.message, reserva: disponiveis });
     }
     return;
   }
