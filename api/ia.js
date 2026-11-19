@@ -85,40 +85,84 @@ ${JSON.stringify(contexto).slice(0, 12000)}
 Responda apenas com JSON: {"texto": string}`;
 }
 
-async function chamarGemini(prompt) {
+// Modelos tentados em ordem. Quando o Google está sobrecarregado (503) ou limita (429), o servidor
+// tenta de novo e passa para o próximo modelo, sempre dentro do tempo que a página espera.
+const MODELOS_RESERVA = ["gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
+const PASSAGEIRO = new Set([429, 500, 502, 503, 504]);
+const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function umaChamada(modelo, prompt, chave, limiteMs) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`;
+  const controle = new AbortController();
+  const timer = setTimeout(() => controle.abort(), limiteMs);
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": chave },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" },
+      }),
+      signal: controle.signal,
+    });
+    if (!resp.ok) {
+      const corpo = await resp.text();
+      const erro = new Error(`Gemini respondeu ${resp.status}: ${corpo.slice(0, 300)}`);
+      erro.status = 502;
+      erro.codigoGoogle = resp.status;
+      throw erro;
+    }
+    const dados = await resp.json();
+    const texto =
+      dados &&
+      dados.candidates &&
+      dados.candidates[0] &&
+      dados.candidates[0].content &&
+      dados.candidates[0].content.parts &&
+      dados.candidates[0].content.parts.map((p) => p.text || "").join("");
+    if (!texto) throw new Error("Resposta vazia do Gemini");
+    const limpo = texto.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+    return JSON.parse(limpo);
+  } catch (e) {
+    if (e.name === "AbortError") {
+      const erro = new Error(`o modelo ${modelo} demorou demais`);
+      erro.codigoGoogle = 504;
+      throw erro;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function chamarGemini(prompt, { orcamentoMs = 18000 } = {}) {
   const chave = process.env.GEMINI_API_KEY;
   if (!chave) {
     const erro = new Error("GEMINI_API_KEY não configurada na Vercel");
     erro.status = 503;
     throw erro;
   }
-  const modelo = process.env.GEMINI_MODEL || MODELO_PADRAO;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": chave },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json" },
-    }),
-  });
-  if (!resp.ok) {
-    const corpo = await resp.text();
-    const erro = new Error(`Gemini respondeu ${resp.status}: ${corpo.slice(0, 300)}`);
-    erro.status = 502;
-    throw erro;
+  const principal = process.env.GEMINI_MODEL || MODELO_PADRAO;
+  // o principal tem duas chances; os de reserva, uma cada
+  const tentativas = [principal, principal, ...MODELOS_RESERVA.filter((m) => m !== principal)];
+  const inicio = Date.now();
+  let ultimo = null;
+  for (let i = 0; i < tentativas.length; i++) {
+    const restante = orcamentoMs - (Date.now() - inicio);
+    if (restante < 1500) break;
+    try {
+      const resposta = await umaChamada(tentativas[i], prompt, chave, Math.min(restante, 12000));
+      return resposta;
+    } catch (e) {
+      ultimo = e;
+      const codigo = e.codigoGoogle;
+      // erro que não passa sozinho (chave inválida, pedido malformado): não adianta insistir
+      if (codigo && !PASSAGEIRO.has(codigo) && codigo !== 404) break;
+      if (!codigo && !(e instanceof SyntaxError) && e.message !== "Resposta vazia do Gemini") break;
+      if (i === 0) await espera(700);
+    }
   }
-  const dados = await resp.json();
-  const texto =
-    dados &&
-    dados.candidates &&
-    dados.candidates[0] &&
-    dados.candidates[0].content &&
-    dados.candidates[0].content.parts &&
-    dados.candidates[0].content.parts.map((p) => p.text || "").join("");
-  if (!texto) throw new Error("Resposta vazia do Gemini");
-  const limpo = texto.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
-  return JSON.parse(limpo);
+  throw ultimo || new Error("IA indisponível");
 }
 
 module.exports = async function handler(req, res) {
@@ -163,11 +207,11 @@ module.exports = async function handler(req, res) {
         res.status(400).json({ erro: "Campos faltando" });
         return;
       }
-      res.status(200).json(await chamarGemini(promptPlanejar(corpo)));
+      res.status(200).json(await chamarGemini(promptPlanejar(corpo), { orcamentoMs: 25000 }));
       return;
     }
     if (corpo.acao === "resumo") {
-      res.status(200).json(await chamarGemini(promptResumo(corpo)));
+      res.status(200).json(await chamarGemini(promptResumo(corpo), { orcamentoMs: 20000 }));
       return;
     }
     res.status(400).json({ erro: "Ação desconhecida" });
