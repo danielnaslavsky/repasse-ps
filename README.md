@@ -42,6 +42,10 @@ Sem IA disponível, regras locais leem um item por linha ("Desafio de Dados: lan
 - **Demonstração** (o link puro do site): dados fictícios salvos no navegador de cada pessoa. Cada avaliador explora a sua cópia, e "Restaurar dados de demonstração" volta ao início. Nada sai para fora: o Discord e a planilha reais só recebem publicações do modo equipe (o servidor exige um código válido).
 - **Equipe** (`/?c=CÓDIGO`): os dados ficam no servidor (Upstash Redis) e são os mesmos para todos. A gerência entra com o código definido em `PS_CODIGO_GERENTE`; cada membro recebe um link próprio, que abre direto nas suas tasks (Equipe → Links de acesso da equipe). "Novo link" invalida o anterior. As gravações usam controle de versão: se duas pessoas mexem ao mesmo tempo, ninguém sobrescreve o outro sem perceber.
 
+### Planilha na demonstração
+
+No link puro do site, "Atualizar planilha" grava numa aba separada, **Demonstração** (e **Demonstração · calendário**), e o botão "Abrir planilha (demonstração)" abre essa aba. Assim, quem avalia vê a planilha reagir sem tocar no cronograma real. O servidor monta os títulos a partir do tipo e da subárea ("Desafio de Dados", "Aviso aos aspirantes"): nenhum texto digitado no site chega à planilha, e itens internos ficam de fora. Se o Apps Script ainda for a versão antiga, que não conhece essa aba, o servidor não envia nada. As abas **Cronograma** e **Calendário** só mudam pelo modo equipe.
+
 ## Piloto automático
 
 Regras que rodam sozinhas, sem a gerência clicar (ao abrir o site e a cada minuto com ele aberto). Cada uma pode ser ligada ou desligada no painel, que também mostra o que o piloto fez:

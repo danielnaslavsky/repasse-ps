@@ -6,6 +6,85 @@
 
 const A = require("./_armazem.js");
 
+// ---------- Demonstração ----------
+// No link puro do site (sem código), "Atualizar planilha" grava na aba "Demonstração", nunca nas abas reais.
+// Ninguém escreve texto livre na planilha: os títulos são montados aqui, a partir do tipo e da subárea.
+const AREAS = ["Comercial", "Marketing", "Dados", "Desenvolvimento", "Produto", "Gente e Gestão", "Inovação", "Geral"];
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const ROTULO = { desafio: "Desafio", treinamento: "Treinamento síncrono", etapa: "Etapa", aviso: "Aviso" };
+
+function eventosDemonstracao(eventos, hoje = new Date().toISOString().slice(0, 10)) {
+  const somar = (iso, n) => new Date(Date.parse(iso + "T12:00:00Z") + n * 864e5).toISOString().slice(0, 10);
+  const min = somar(hoje, -90);
+  const max = somar(hoje, 400);
+  const dentro = (iso) => ISO.test(iso || "") && iso >= min && iso <= max;
+  return (Array.isArray(eventos) ? eventos : [])
+    .filter((e) => e && !e.interno && dentro(e.data) && ROTULO[e.tipo])
+    .slice(0, 40)
+    .map((e) => {
+      const area = AREAS.includes(e.area) ? e.area : "Geral";
+      const titulo = {
+        desafio: `Desafio de ${area}`,
+        treinamento: `Treinamento síncrono de ${area}`,
+        etapa: "Etapa com a equipe (dinâmica, entrevistas)",
+        aviso: area === "Geral" ? "Aviso aos aspirantes" : `Aviso de ${area}`,
+      }[e.tipo];
+      return {
+        tipo: e.tipo,
+        tipoRotulo: ROTULO[e.tipo],
+        titulo,
+        area,
+        data: e.data,
+        hora: /^([01]\d|2[0-3]):[0-5]\d$/.test(e.hora || "") ? e.hora : null,
+        entrega: e.tipo === "desafio" && dentro(e.entrega) && e.entrega >= e.data ? e.entrega : null,
+        local: "",
+        descricao: "",
+      };
+    });
+}
+
+let versaoScript = { valor: 0, em: 0 };
+let ultimaDemo = 0;
+
+async function versaoDoScript(url) {
+  if (versaoScript.valor >= 2 && Date.now() - versaoScript.em < 10 * 60e3) return versaoScript.valor;
+  try {
+    const r = await fetch(url, { redirect: "follow" });
+    const j = JSON.parse(await r.text());
+    versaoScript = { valor: Number(j.versao) || 1, em: Date.now() };
+  } catch (e) {
+    versaoScript = { valor: 0, em: Date.now() };
+  }
+  return versaoScript.valor;
+}
+
+async function enviarDemonstracao(eventos) {
+  const url = process.env.GOOGLE_SCRIPT_URL;
+  const token = process.env.GOOGLE_SCRIPT_TOKEN;
+  if (!url || !token) return { ok: false, status: 503, naoConfigurado: true, erro: "Planilha do Google não configurada na Vercel" };
+  // Script antigo não conhece a aba de demonstração e gravaria nas abas reais: não envia.
+  if ((await versaoDoScript(url)) < 2) {
+    return { ok: false, status: 409, scriptAntigo: true, erro: "o Apps Script da planilha precisa ser atualizado para aceitar a aba Demonstração" };
+  }
+  if (Date.now() - ultimaDemo < 3000) return { ok: false, status: 429, erro: "aguarde alguns segundos e tente de novo" };
+  ultimaDemo = Date.now();
+  const lista = eventosDemonstracao(eventos);
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ token, destino: "demonstracao", eventos: lista }),
+      redirect: "follow",
+    });
+    const dados = JSON.parse(await resp.text());
+    if (!dados.ok) return { ok: false, status: 502, erro: dados.erro || "erro no Apps Script" };
+    if (dados.destino !== "demonstracao") return { ok: false, status: 502, erro: "o Apps Script não confirmou a aba Demonstração" };
+    return { ok: true, status: 200, demonstracao: true, itens: dados.itens, gid: dados.gid };
+  } catch (e) {
+    return { ok: false, status: 502, erro: e.message };
+  }
+}
+
 // Envia a lista de eventos ao Apps Script. Devolve { ok, status, erro, itens, naoConfigurado }.
 async function enviarPlanilha(eventos) {
   const url = process.env.GOOGLE_SCRIPT_URL;
@@ -84,13 +163,19 @@ module.exports = async function handler(req, res) {
     res.status(405).json({ erro: "Use POST" });
     return;
   }
-  if (!(await A.autorizarPublicacao(req))) {
-    res.status(403).json({ erro: "Atualizar a planilha só é possível no modo equipe", demonstracao: true });
-    return;
-  }
   let corpo = req.body;
   if (typeof corpo === "string") {
     try { corpo = JSON.parse(corpo); } catch (e) { corpo = {}; }
+  }
+  if (corpo && corpo.demo === true) {
+    const r = await enviarDemonstracao(corpo.eventos);
+    if (r.ok) res.status(200).json(r);
+    else res.status(r.status).json({ erro: r.erro, scriptAntigo: !!r.scriptAntigo, naoConfigurado: !!r.naoConfigurado });
+    return;
+  }
+  if (!(await A.autorizarPublicacao(req))) {
+    res.status(403).json({ erro: "Atualizar a planilha só é possível no modo equipe", demonstracao: true });
+    return;
   }
   const r = await enviarPlanilha(corpo && corpo.eventos);
   if (r.ok) res.status(200).json(r);
@@ -98,3 +183,5 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports.enviarPlanilha = enviarPlanilha;
+module.exports.enviarDemonstracao = enviarDemonstracao;
+module.exports.eventosDemonstracao = eventosDemonstracao;

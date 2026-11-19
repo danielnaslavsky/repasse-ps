@@ -11,11 +11,15 @@
  *     Autorize o acesso quando o Google pedir.
  *  7. Copie a URL do app da Web e cole na Vercel em GOOGLE_SCRIPT_URL. Redeploy.
  *  8. Compartilhe a planilha com os aspirantes como "Leitor".
+ *
+ * Para atualizar este script depois: cole a versão nova, salve e vá em Implantar → Gerenciar implantações →
+ * lápis (editar) → Versão: "Nova versão" → Implantar. A URL continua a mesma.
  */
 
 const TOKEN = "troque-este-codigo";
 const CALENDARIO_ID = ""; // opcional
 
+const VERSAO = 2; // 2: aceita a aba "Demonstração"
 const MARCA = "[repasse]";
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const DIAS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
@@ -28,8 +32,14 @@ function doPost(e) {
     const eventos = (corpo.eventos || []).filter(function (ev) { return ev && ev.data; });
     eventos.sort(function (a, b) { return (a.data + (a.hora || "")).localeCompare(b.data + (b.hora || "")); });
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    escreverLista(ss, eventos);
-    escreverCalendario(ss, eventos);
+    if (corpo.destino === "demonstracao") {
+      // Demonstração do site: abas separadas, nunca as reais, e sem Google Agenda.
+      const lista = escreverLista(ss, eventos, "Demonstração", "Dados fictícios da demonstração do repasse. O cronograma real fica na aba Cronograma.");
+      escreverCalendario(ss, eventos, "Demonstração · calendário");
+      return resposta({ ok: true, itens: eventos.length, destino: "demonstracao", gid: lista.getSheetId(), em: new Date().toISOString() });
+    }
+    escreverLista(ss, eventos, "Cronograma");
+    escreverCalendario(ss, eventos, "Calendário");
     let agenda = "não configurada";
     if (CALENDARIO_ID) agenda = sincronizarAgenda(eventos);
     return resposta({ ok: true, itens: eventos.length, agenda: agenda, em: new Date().toISOString() });
@@ -39,7 +49,7 @@ function doPost(e) {
 }
 
 function doGet() {
-  return resposta({ ok: true, servico: "repasse · cronograma do PS" });
+  return resposta({ ok: true, servico: "repasse · cronograma do PS", versao: VERSAO });
 }
 
 function resposta(obj) {
@@ -69,8 +79,8 @@ function horaBR(hora) {
 }
 
 // ---------- Aba "Cronograma": uma linha por item ----------
-function escreverLista(ss, eventos) {
-  const sh = aba(ss, "Cronograma");
+function escreverLista(ss, eventos, nomeAba, nota) {
+  const sh = aba(ss, nomeAba);
   sh.clear();
   const cab = ["Data", "Horário", "Tipo", "Subárea", "Item", "Entrega", "Local"];
   const linhas = eventos.map(function (ev) {
@@ -90,6 +100,8 @@ function escreverLista(ss, eventos) {
     if ((ev.entrega || ev.data) < hoje) sh.getRange(i + 2, 1, 1, cab.length).setFontColor("#9a978f");
   });
   sh.getRange(linhas.length + 3, 1).setValue("Atualizado automaticamente pelo repasse em " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM HH:mm")).setFontColor("#9a978f").setFontStyle("italic");
+  if (nota) sh.getRange(linhas.length + 4, 1).setValue(nota).setFontColor("#9a978f").setFontStyle("italic");
+  return sh;
 }
 
 // ---------- Aba "Calendário": grade mensal ----------
@@ -106,8 +118,8 @@ function itensDoDia(eventos, iso) {
   return itens;
 }
 
-function escreverCalendario(ss, eventos) {
-  const sh = aba(ss, "Calendário");
+function escreverCalendario(ss, eventos, nomeAba) {
+  const sh = aba(ss, nomeAba);
   sh.clear();
   sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).breakApart();
   if (!eventos.length) {

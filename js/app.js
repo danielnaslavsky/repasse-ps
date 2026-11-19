@@ -44,7 +44,7 @@ const ui = {
   enviando: false,
   cronoVista: "lista", // "lista" ou "calendario"
   ausenciaAberta: false,
-  google: { configurado: false, planilha: null, sincronizando: false },
+  google: { configurado: false, planilha: null, sincronizando: false, gidDemo: lerGidDemo() },
   plano: null, // { passo: "texto" | "lendo" | "revisao", texto, nAspirantes, substituir, publicar, lido, resultado }
 };
 
@@ -788,7 +788,7 @@ function telaCronograma() {
       <button class="botao" data-acao="publicar-cronograma" ${ui.enviando ? "disabled" : ""}>Publicar no Discord</button>
       <button class="botao" data-acao="enviar-lembretes" ${ui.enviando ? "disabled" : ""}>Lembrar hoje e amanhã</button>
       <button class="botao" data-acao="sincronizar-google" ${ui.google.sincronizando ? "disabled" : ""}>${ui.google.sincronizando ? "Atualizando planilha…" : "Atualizar planilha"}</button>
-      ${ui.google.planilha ? `<a class="botao" href="${esc(ui.google.planilha)}" target="_blank" rel="noopener">Abrir planilha</a>` : ""}
+      ${linkPlanilha() ? `<a class="botao" href="${esc(linkPlanilha())}" target="_blank" rel="noopener">Abrir planilha${equipe.ativo ? "" : " (demonstração)"}</a>` : ""}
     </div>
     ${ui.evEditando ? formEvento() : ""}
     ${ui.cronoVista === "calendario" ? calendarioHtml(true) : semanas || `<p class="vazio">Nenhum item no cronograma.</p>`}`;
@@ -885,6 +885,33 @@ const ajustarTasksDoEvento = (ev) => R.ajustarTasksDoEvento(ctx(), ev);
 const cancelarTasksDoEvento = (ev) => R.cancelarTasksDoEvento(ctx(), ev);
 
 // ---------- Google Sheets ----------
+function lerGidDemo() {
+  try { return localStorage.getItem("ps-tasks:gid-demo") || null; } catch (e) { return null; }
+}
+// No modo equipe, abre a planilha; na demonstração, abre direto a aba "Demonstração".
+function linkPlanilha() {
+  if (!ui.google.planilha) return null;
+  if (equipe.ativo || !ui.google.gidDemo) return ui.google.planilha;
+  return ui.google.planilha.split("#")[0].replace(/\?.*$/, "") + "#gid=" + ui.google.gidDemo;
+}
+async function sincronizarDemonstracao(manual) {
+  ui.google.sincronizando = true;
+  if (manual) render();
+  try {
+    const r = await fetch("/api/google", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ demo: true, eventos: R.eventosOrdenados(estado, { publico: true }) }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw Object.assign(new Error(d.erro || `HTTP ${r.status}`), { d });
+    if (d.gid != null) {
+      ui.google.gidDemo = String(d.gid);
+      try { localStorage.setItem("ps-tasks:gid-demo", ui.google.gidDemo); } catch (e) { /* sem armazenamento */ }
+    }
+    if (manual) toast(`Aba "Demonstração" da planilha atualizada (${d.itens} itens, títulos genéricos). A aba real só muda no modo equipe.`);
+  } catch (e) {
+    if (manual) toast(e.d && e.d.scriptAntigo ? "Demonstração: a planilha não foi alterada (o script da planilha ainda não tem a aba de demonstração)." : `Demonstração: não foi possível atualizar a planilha (${e.message}).`);
+  }
+  ui.google.sincronizando = false;
+  render();
+}
 async function consultarGoogle() {
   try {
     const r = await fetch("/api/google");
@@ -898,8 +925,12 @@ async function consultarGoogle() {
 
 async function sincronizarGoogle({ manual = false } = {}) {
   if (!equipe.ativo) {
-    if (manual) toast("Demonstração: a planilha não foi alterada. No modo equipe, ela seria atualizada.");
-    return;
+    if (!ui.google.configurado) {
+      if (manual) toast("Demonstração: a planilha do Google não está configurada neste site.");
+      return;
+    }
+    if (!manual && !estado.piloto.sincronizarGoogle) return;
+    return sincronizarDemonstracao(manual);
   }
   if (!manual && !estado.piloto.sincronizarGoogle) return;
   if (!manual && !ui.google.configurado) return;
