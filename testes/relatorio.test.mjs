@@ -26,6 +26,11 @@ assert.equal(r.pessoas[0].id, "m_joao"); // ordenado por horas
 assert.ok(r.licoes.some((l) => /Produto tem uma pessoa só/.test(l)));
 assert.ok(r.licoes.some((l) => /João passou da capacidade/.test(l)));
 assert.ok(r.licoes.some((l) => /piloto automático repassou 1 task sozinho/.test(l)));
+// Iara fica sem nenhuma task depois de repassar: aparece como "repassou tudo", não como "não recebeu".
+for (const t of e.tasks) if (t.responsavelId === "m_iara") t.responsavelId = "m_ana";
+r = gerarRelatorio(e, hoje);
+assert.ok(r.licoes.some((l) => /Iara repassou tudo o que recebeu/.test(l)), r.licoes.join(" | "));
+assert.ok(!r.licoes.some((l) => /Iara[^:]*não receb/.test(l)));
 const txt = relatorioEmTexto(r);
 assert.ok(txt.includes("Horas de trabalho:") && /\d,\dh|\dh/.test(txt));
 assert.ok(txt.includes("Para o próximo PS:"));

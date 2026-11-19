@@ -93,8 +93,10 @@ export function gerarRelatorio(estado, hoje) {
     const menos = ativos[ativos.length - 1];
     if (top.horas - menos.horas >= 8) licoes.push(`A diferença de carga entre quem mais e quem menos trabalhou foi de ${num(top.horas - menos.horas)}h; vale revisar a capacidade cadastrada de cada um.`);
   }
-  const semTask = pessoas.filter((p) => p.tasks === 0).map((p) => primeiro(p.nome));
+  const semTask = pessoas.filter((p) => p.tasks === 0 && p.recusou === 0).map((p) => primeiro(p.nome));
   if (tasks.length >= 5 && semTask.length) licoes.push(`${listaNomes(semTask)} ${semTask.length === 1 ? "não recebeu" : "não receberam"} nenhuma task: dá para chamar mais cedo, ou conferir se estão marcados como ausentes.`);
+  const repassaramTudo = pessoas.filter((p) => p.tasks === 0 && p.recusou > 0).map((p) => primeiro(p.nome));
+  if (repassaramTudo.length) licoes.push(`${listaNomes(repassaramTudo)} ${repassaramTudo.length === 1 ? "repassou tudo o que recebeu" : "repassaram tudo o que receberam"}: vale conversar sobre a disponibilidade antes do próximo PS.`);
   for (const a of porArea) {
     if (a.nome !== "Geral" && a.pessoas === 1 && a.horas >= 15) licoes.push(`${a.nome} tem uma pessoa só e recebeu ${num(a.horas)}h: no próximo PS, recrute mais gente para essa subárea ou divida as correções.`);
     if (a.nome !== "Geral" && a.pessoas === 0 && a.tasks) licoes.push(`${a.nome} não tem ninguém na equipe e teve ${plural(a.tasks, "task atribuída", "tasks atribuídas")} a outras subáreas.`);
