@@ -46,6 +46,10 @@ Sem IA disponível, regras locais leem um item por linha ("Desafio de Dados: lan
 
 No link puro do site, "Atualizar planilha" grava numa aba separada, **Demonstração** (e **Demonstração · calendário**), e o botão "Abrir planilha (demonstração)" abre essa aba. Assim, quem avalia vê a planilha reagir sem tocar no cronograma real. O servidor monta os títulos a partir do tipo e da subárea ("Desafio de Dados", "Aviso aos aspirantes"): nenhum texto digitado no site chega à planilha, e itens internos ficam de fora. Se o Apps Script ainda for a versão antiga, que não conhece essa aba, o servidor não envia nada. As abas **Cronograma** e **Calendário** só mudam pelo modo equipe.
 
+### Discord na demonstração
+
+No link puro, publicar no Discord (cronograma, lembretes, novo item, mudança, cancelamento) abre uma prévia da mensagem exatamente como o bot a publica no canal dos aspirantes. Assim, quem avalia vê o recurso funcionando sem precisar entrar no servidor. Se `DISCORD_WEBHOOK_DEMO` estiver definida (um canal só para a demonstração), a mensagem também é publicada lá; com `DISCORD_CONVITE_DEMO`, a prévia mostra "Ver no Discord". Como na planilha, os títulos são montados pelo servidor e ninguém é marcado. O canal real dos aspirantes só recebe mensagens do modo equipe.
+
 ## Piloto automático
 
 Regras que rodam sozinhas, sem a gerência clicar (ao abrir o site e a cada minuto com ele aberto). Cada uma pode ser ligada ou desligada no painel, que também mostra o que o piloto fez:

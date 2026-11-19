@@ -3,6 +3,8 @@
 //   DISCORD_WEBHOOK_ASPIRANTES  webhook do canal dos aspirantes (cronograma, mudanças, lembretes)
 //   DISCORD_WEBHOOK_EQUIPE      opcional: webhook do canal da equipe do PS (novas tasks, repasses)
 //   DISCORD_PIN                 opcional: código que a gerência digita para poder publicar
+//   DISCORD_WEBHOOK_DEMO        opcional: webhook de um canal só para a demonstração do site
+//   DISCORD_CONVITE_DEMO        opcional: convite para esse canal, para o site mostrar "Ver no Discord"
 
 const A = require("./_armazem.js");
 
@@ -139,6 +141,81 @@ function webhookDe(canal) {
   return canal === "equipe" ? process.env.DISCORD_WEBHOOK_EQUIPE : process.env.DISCORD_WEBHOOK_ASPIRANTES;
 }
 
+// ---------- Demonstração ----------
+// No link puro do site, publicar mostra a prévia da mensagem e, se houver DISCORD_WEBHOOK_DEMO, publica num
+// canal só de demonstração. Como na planilha, os títulos são montados aqui a partir do tipo e da subárea.
+const { eventosDemonstracao } = require("./google.js");
+const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const ISO_DATA = /^\d{4}-\d{2}-\d{2}$/;
+const curto = (iso) => `${DIAS_SEMANA[new Date(iso + "T12:00:00Z").getUTCDay()]}, ${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const hora = (h) => (h ? (h.endsWith(":00") ? `${Number(h.slice(0, 2))}h` : `${Number(h.slice(0, 2))}h${h.slice(3)}`) : "");
+const quando = (e) => `${curto(e.data)}${e.hora ? ` · ${hora(e.hora)}` : ""}`;
+const linha = (e) => ({
+  titulo: e.titulo,
+  quando: e.tipo === "desafio" ? `${curto(e.data)} (lançamento)` : quando(e),
+  entrega: e.tipo === "desafio" && e.entrega ? curto(e.entrega) : "",
+});
+const resumo = (e) => [quando(e), e.tipo === "desafio" && e.entrega ? `entrega ${curto(e.entrega)}` : ""].filter(Boolean).join(" · ");
+const umEvento = (e) => (e ? eventosDemonstracao([e])[0] || null : null);
+
+function corpoDemonstracao(pedido) {
+  const todos = eventosDemonstracao(pedido.eventos);
+  switch (pedido.tipo) {
+    case "cronograma":
+      return { tipo: "cronograma", titulo: "Cronograma do processo seletivo", eventos: todos.map(linha) };
+    case "lembrete": {
+      const dia = ISO_DATA.test(pedido.hoje || "") ? pedido.hoje : new Date().toISOString().slice(0, 10);
+      const amanha = new Date(Date.parse(dia + "T12:00:00Z") + 864e5).toISOString().slice(0, 10);
+      const doDia = (iso) => {
+        const l = [];
+        for (const e of todos) {
+          if (e.tipo === "desafio") {
+            if (e.data === iso) l.push({ titulo: `Lançamento: ${e.titulo}`, quando: curto(iso) });
+            if (e.entrega === iso) l.push({ titulo: `Entrega: ${e.titulo}`, quando: curto(iso) });
+          } else if (e.data === iso) l.push(linha(e));
+        }
+        return l;
+      };
+      return { tipo: "lembrete", hoje: doDia(dia), amanha: doDia(amanha) };
+    }
+    case "novo":
+    case "cancelado": {
+      const e = umEvento(pedido.evento);
+      return e ? { tipo: pedido.tipo, evento: linha(e) } : null;
+    }
+    case "mudanca": {
+      const e = umEvento(pedido.evento);
+      const a = umEvento(pedido.antes);
+      return e && a ? { tipo: "mudanca", evento: linha(e), antes: resumo(a), depois: resumo(e) } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+let ultimaDemo = 0;
+async function publicarDemonstracao(pedido) {
+  const corpo = corpoDemonstracao(pedido || {});
+  const mensagem = corpo && montar(corpo);
+  if (!mensagem || mensagem.canal !== "aspirantes") return { ok: false, status: 400, erro: "Mensagem de demonstração inválida" };
+  for (const e of mensagem.embeds || []) e.footer = { text: "repasse · demonstração com dados fictícios" };
+  const resultado = { ok: true, status: 200, demonstracao: true, previa: mensagem.embeds, publicado: false, convite: process.env.DISCORD_CONVITE_DEMO || null };
+  const url = process.env.DISCORD_WEBHOOK_DEMO;
+  if (!url) return resultado;
+  if (Date.now() - ultimaDemo < 5000) return { ...resultado, aguarde: true };
+  ultimaDemo = Date.now();
+  try {
+    const resp = await fetch(`${url}${url.includes("?") ? "&" : "?"}wait=true`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "repasse · demonstração", embeds: mensagem.embeds, allowed_mentions: { parse: [] } }),
+    });
+    return { ...resultado, publicado: resp.ok, erroDiscord: resp.ok ? undefined : `Discord respondeu ${resp.status}` };
+  } catch (e) {
+    return { ...resultado, erroDiscord: e.message };
+  }
+}
+
 // Monta e publica uma mensagem. Devolve { ok, status, erro, naoConfigurado, canal }.
 async function postar(corpo) {
   const mensagem = montar(corpo);
@@ -167,6 +244,8 @@ module.exports = async function handler(req, res) {
       aspirantes: !!process.env.DISCORD_WEBHOOK_ASPIRANTES,
       equipe: !!process.env.DISCORD_WEBHOOK_EQUIPE,
       pinExigido: !!process.env.DISCORD_PIN,
+      demo: !!process.env.DISCORD_WEBHOOK_DEMO,
+      conviteDemo: process.env.DISCORD_CONVITE_DEMO || null,
     });
     return;
   }
@@ -184,6 +263,11 @@ module.exports = async function handler(req, res) {
     }
   }
   corpo = corpo || {};
+  if (corpo.demo === true) {
+    const r = await publicarDemonstracao(corpo);
+    res.status(r.status).json(r);
+    return;
+  }
   if (!(await A.autorizarPublicacao(req))) {
     res.status(403).json({ erro: "Publicar no Discord só é possível no modo equipe", demonstracao: true });
     return;
@@ -198,4 +282,5 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports.montar = montar;
+module.exports.corpoDemonstracao = corpoDemonstracao;
 module.exports.postar = postar;

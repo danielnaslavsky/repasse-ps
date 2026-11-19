@@ -30,3 +30,4 @@ const res = () => { const r = { code: 0, body: null, status(c){ r.code=c; return
   assert.equal(r2.code, 200);
   console.log("DISCORD PROTEGIDO OK");
 })();
+

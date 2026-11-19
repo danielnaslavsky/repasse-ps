@@ -1,6 +1,12 @@
 # Planejamento completo com a resposta da IA simulada. Rode antes, na raiz: python3 -m http.server 8765 e mkdir capturas
 import json, sys
 from playwright.sync_api import sync_playwright
+
+def fechar_previa(pg):
+    try:
+        if pg.locator(".dc-janela").count(): pg.click(".dc-cab >> text=Fechar")
+    except Exception: pass
+
 texto = open("testes/exemplos/planejamento-completo.txt", encoding="utf-8").read()
 def ev(tipo, titulo, area, data, **k):
     return {"tipo": tipo, "titulo": titulo, "area": area, "data": data, "entrega": k.get("entrega"), "hora": k.get("hora"), "local": k.get("local", ""), "descricao": k.get("descricao", ""), "pessoas": k.get("pessoas"), "duracaoH": k.get("duracaoH"), "interno": k.get("interno", False)}
@@ -44,7 +50,7 @@ with sync_playwright() as p:
         "comunicar deliberação ausente": "Comunicar: Deliberação" not in corpo,
     }
     n_din = pg.locator("text=Participar: Dinâmica em grupo").count()
-    pg.click("text=Confirmar e criar tudo"); pg.wait_for_selector(".cal")
+    pg.click("text=Confirmar e criar tudo"); pg.wait_for_timeout(400); fechar_previa(pg); pg.wait_for_selector(".cal")
     pg.wait_for_timeout(500)
     pg.click("text=Painel"); pg.click("text=Todas"); pg.wait_for_timeout(200)
     painel = pg.inner_text("main")

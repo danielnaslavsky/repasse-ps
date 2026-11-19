@@ -191,7 +191,28 @@ function render() {
     p.papel === "gerente"
       ? ({ painel: telaPainel, nova: telaNova, cronograma: telaCronograma, equipe: telaEquipe }[ui.aba] || telaPainel)()
       : ({ minhas: telaMinhas, calendario: telaCalendario }[ui.aba] || telaMinhas)();
-  raiz.innerHTML = topo(p) + `<main>${conteudo}</main>`;
+  raiz.innerHTML = topo(p) + `<main>${conteudo}</main>` + previaDiscordHtml();
+}
+
+// Prévia da mensagem do Discord (demonstração): mostra exatamente o que iria para o canal dos aspirantes.
+function previaDiscordHtml() {
+  const pv = ui.previaDiscord;
+  if (!pv) return "";
+  const md = (t) => esc(t || "").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
+  const embeds = (pv.embeds || []).map((e) => `<div class="dc-embed" style="border-left-color:#${(e.color || 0x0e5a47).toString(16).padStart(6, "0")}">
+      <div class="dc-titulo">${esc(e.title || "")}</div>
+      ${e.description ? `<div class="dc-texto">${md(e.description)}</div>` : ""}
+      ${(e.fields || []).map((f) => `<div class="dc-campo"><div class="dc-campo-nome">${esc(f.name)}</div><div class="dc-texto">${md(f.value)}</div></div>`).join("")}
+      ${e.footer ? `<div class="dc-rodape">${esc(e.footer.text)}</div>` : ""}
+    </div>`).join("");
+  const status = pv.publicado
+    ? "Publicado no canal de demonstração do Discord."
+    : "Demonstração: esta é a mensagem que o bot publica no canal dos aspirantes. No modo equipe, ela vai para o Discord real.";
+  return `<div class="dc-fundo" data-acao="fechar-previa"><div class="dc-janela" role="dialog" aria-label="Prévia da mensagem no Discord" data-acao="dentro-da-previa">
+    <div class="dc-cab"><b>Discord · #aspirantes</b><button class="botao texto" data-acao="fechar-previa">Fechar</button></div>
+    <div class="dc-msg"><div class="dc-avatar">r</div><div class="dc-corpo"><div class="dc-autor">repasse · PS <span class="dc-bot">BOT</span></div>${embeds}</div></div>
+    <p class="dc-status">${esc(status)}${pv.convite ? ` <a href="${esc(pv.convite)}" target="_blank" rel="noopener">Ver no Discord</a>` : ""}</p>
+  </div></div>`;
 }
 
 function topo(p) {
@@ -677,7 +698,27 @@ function avisarEquipe(corpo) {
   enviarDiscord(corpo, { perguntarPin: false, codigo: equipe.codigo }).catch(() => {});
 }
 
-async function publicarAspirantes(corpo, mensagemOk) {
+async function publicarDemonstracao(corpo, extra) {
+  ui.enviando = true;
+  render();
+  try {
+    const publicos = R.eventosOrdenados(estado, { publico: true });
+    const eventos = corpo.tipo === "cronograma" ? publicos.filter((e) => (e.entrega || e.data) >= hoje) : publicos;
+    const pedido = { demo: true, tipo: corpo.tipo, hoje, eventos, ...(extra || {}) };
+    const r = await fetch("/api/discord", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pedido) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.erro || `HTTP ${r.status}`);
+    ui.previaDiscord = { embeds: d.previa, publicado: d.publicado, convite: d.convite };
+  } catch (e) {
+    toast(`Demonstração: não foi possível montar a mensagem do Discord (${e.message}).`);
+  }
+  ui.enviando = false;
+  render();
+  return false;
+}
+
+async function publicarAspirantes(corpo, mensagemOk, extra) {
+  if (!equipe.ativo) return publicarDemonstracao(corpo, extra);
   ui.enviando = true;
   render();
   const r = await enviarDiscord(corpo, { codigo: equipe.ativo ? equipe.codigo : null });
@@ -1417,23 +1458,27 @@ const acoes = {
     if (!dados.data) return toast("Defina a data.");
     if (dados.entrega && dados.entrega < dados.data) return toast("A entrega não pode ser antes do lançamento.");
     let corpo = null;
+    let extra = null;
     let msg = "";
     if (ui.evEditando === "novo") {
       const ev = { id: novoId("e"), ...dados };
       estado.eventos.push(ev);
       registrar(estado, `Cronograma: "${ev.titulo}" adicionado (${resumoDatas(ev)}).`);
       corpo = { tipo: "novo", evento: eventoParaDiscord(ev) };
+      extra = { evento: ev };
       msg = `aspirantes avisados sobre "${ev.titulo}".`;
       ui.evSugestoes = ev.id;
     } else {
       const ev = estado.eventos.find((e) => e.id === ui.evEditando);
       const antes = resumoDatas(ev);
+      const evAntes = { ...ev };
       Object.assign(ev, dados);
       const depois = resumoDatas(ev);
       registrar(estado, `Cronograma: "${ev.titulo}" atualizado${antes !== depois ? ` (${antes} → ${depois})` : ""}.`);
       ajustarTasksDoEvento(ev);
       if (antes !== depois) {
         corpo = { tipo: "mudanca", evento: eventoParaDiscord(ev), antes, depois };
+        extra = { evento: ev, antes: evAntes };
         msg = `aspirantes avisados da mudança em "${ev.titulo}".`;
       }
     }
@@ -1441,7 +1486,7 @@ const acoes = {
     persistir();
     render();
     sincronizarGoogle();
-    if (avisar && corpo) await publicarAspirantes(corpo, msg);
+    if (avisar && corpo) await publicarAspirantes(corpo, msg, extra);
     else toast("Cronograma salvo.");
   },
   async "excluir-evento"(el) {
@@ -1455,7 +1500,7 @@ const acoes = {
     render();
     sincronizarGoogle();
     if (ev.interno) return toast("Item removido do cronograma da equipe.");
-    await publicarAspirantes({ tipo: "cancelado", evento: eventoParaDiscord(ev) }, `aspirantes avisados do cancelamento de "${ev.titulo}".`);
+    await publicarAspirantes({ tipo: "cancelado", evento: eventoParaDiscord(ev) }, `aspirantes avisados do cancelamento de "${ev.titulo}".`, { evento: ev });
   },
   "sugestoes-evento"(el) {
     ui.evSugestoes = ui.evSugestoes === el.dataset.id ? null : el.dataset.id;
@@ -1672,6 +1717,10 @@ const acoes = {
       toast(`A rotina não rodou: ${e.message}`);
     }
     ui.rodandoRotina = false;
+    render();
+  },
+  "fechar-previa"() {
+    ui.previaDiscord = null;
     render();
   },
   "sincronizar-google"() {
