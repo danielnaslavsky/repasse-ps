@@ -52,7 +52,7 @@ A aba **Relatório** (gerência) junta os números do processo: tasks concluída
 
 ### Planilha na demonstração
 
-No link puro do site, "Atualizar planilha" grava numa aba separada, **Demonstração** (e **Demonstração · calendário**), e o botão "Abrir planilha (demonstração)" abre essa aba. Assim, quem avalia vê a planilha reagir sem tocar no cronograma real. O servidor monta os títulos a partir do tipo e da subárea ("Desafio de Dados", "Aviso aos aspirantes"): nenhum texto digitado no site chega à planilha, e itens internos ficam de fora. Se o Apps Script ainda for a versão antiga, que não conhece essa aba, o servidor não envia nada. As abas **Cronograma** e **Calendário** só mudam pelo modo equipe.
+No link puro do site, "Atualizar planilha" grava numa aba separada, **Demonstração**, e o botão "Abrir planilha (demonstração)" abre essa aba. Assim, quem avalia vê a planilha reagir sem tocar no cronograma real. O servidor monta os títulos a partir do tipo e da subárea ("Desafio de Dados", "Aviso aos aspirantes"): nenhum texto digitado no site chega à planilha, e itens internos ficam de fora. Se o Apps Script ainda for a versão antiga, que não conhece essa aba, o servidor não envia nada. As abas **Cronograma** e **Calendário** só mudam pelo modo equipe. O script mantém só essas três abas, nessa ordem, e apaga as que sobrarem dele (abas criadas por você não são tocadas).
 
 ### Discord na demonstração
 

@@ -19,7 +19,8 @@
 const TOKEN = "troque-este-codigo";
 const CALENDARIO_ID = ""; // opcional
 
-const VERSAO = 2; // 2: aceita a aba "Demonstração"
+const VERSAO = 3; // 2: aceita a aba "Demonstração"; 3: só as abas essenciais
+const ABAS = ["Cronograma", "Calendário", "Demonstração"]; // nesta ordem
 const MARCA = "[repasse]";
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const DIAS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
@@ -35,11 +36,12 @@ function doPost(e) {
     if (corpo.destino === "demonstracao") {
       // Demonstração do site: abas separadas, nunca as reais, e sem Google Agenda.
       const lista = escreverLista(ss, eventos, "Demonstração", "Dados fictícios da demonstração do repasse. O cronograma real fica na aba Cronograma.");
-      escreverCalendario(ss, eventos, "Demonstração · calendário");
+      arrumarAbas(ss);
       return resposta({ ok: true, itens: eventos.length, destino: "demonstracao", gid: lista.getSheetId(), em: new Date().toISOString() });
     }
     escreverLista(ss, eventos, "Cronograma");
     escreverCalendario(ss, eventos, "Calendário");
+    arrumarAbas(ss);
     let agenda = "não configurada";
     if (CALENDARIO_ID) agenda = sincronizarAgenda(eventos);
     return resposta({ ok: true, itens: eventos.length, agenda: agenda, em: new Date().toISOString() });
@@ -54,6 +56,26 @@ function doGet() {
 
 function resposta(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Deixa só as abas essenciais, nesta ordem. Apaga a aba antiga de calendário da demonstração e
+// abas vazias que o Google cria sozinho (Página1, Planilha1, Sheet1). Outras abas suas não são tocadas.
+function arrumarAbas(ss) {
+  const sobras = ["Demonstração · calendário", "Página1", "Página 1", "Planilha1", "Planilha 1", "Sheet1"];
+  sobras.forEach(function (nome) {
+    const sh = ss.getSheetByName(nome);
+    if (!sh || ss.getSheets().length <= 1) return;
+    if (nome.indexOf("Demonstração") === 0 || sh.getLastRow() === 0) ss.deleteSheet(sh);
+  });
+  let pos = 1;
+  ABAS.forEach(function (nome) {
+    const sh = ss.getSheetByName(nome);
+    if (!sh) return;
+    ss.setActiveSheet(sh);
+    ss.moveActiveSheet(pos++);
+  });
+  const primeira = ss.getSheetByName("Cronograma");
+  if (primeira) ss.setActiveSheet(primeira);
 }
 
 function aba(ss, nome) {
