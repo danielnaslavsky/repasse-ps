@@ -381,3 +381,28 @@ code { font-family: var(--mono); font-size: 0.92em; background: #f1efe9; border-
 .dc-rodape { font-size: 12px; color: #949ba4; margin-top: 8px; }
 .dc-status { font-size: 13px; color: #b5bac1; padding: 0 16px 16px; margin: 0; }
 .dc-status a { color: #00a8fc; }
+
+/* Relatório do PS */
+.licoes { margin: 0; padding-left: 20px; }
+.licoes li { margin: 6px 0; line-height: 1.45; }
+.relatorio-num { display: flex; align-items: baseline; gap: 10px; margin: 10px 0; }
+.relatorio-num b { font-family: var(--mono); font-size: 20px; min-width: 70px; }
+.relatorio-num span { color: var(--suave); font-size: 14px; }
+.barra.acima i { background: var(--vermelho); }
+
+
+small.suave, .suave { color: var(--suave); }
+@media print {
+  .topo, .nao-imprimir, .toast { display: none !important; }
+  body { background: #fff; }
+  .cartao { break-inside: avoid; box-shadow: none; }
+  .grade-3-1 { grid-template-columns: 1fr !important; }
+}
+
+/* Itens de grade podem encolher: tabelas largas rolam dentro do cartão, sem alargar a página. */
+.grade > *, .grade-3-1 > *, .grade-2 > * { min-width: 0; }
+@media (max-width: 600px) {
+  .abas { flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); mask-image: linear-gradient(to right, #000 85%, transparent); }
+  .abas::-webkit-scrollbar { display: none; }
+  .aba { flex: none; white-space: nowrap; }
+}

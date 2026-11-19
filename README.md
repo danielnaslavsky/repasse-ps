@@ -37,6 +37,10 @@ O planejamento pode vir no formato de um documento de verdade, com tabela por su
 
 Sem IA disponível, regras locais leem um item por linha ("Desafio de Dados: lançamento 23/11, entrega 27/11") e tabelas com uma linha por subárea (lançamento, entrega, treinamento).
 
+## Relatório do PS
+
+A aba **Relatório** (gerência) junta os números do processo: tasks concluídas, atrasadas e no prazo; horas de trabalho por pessoa, por subárea e por tipo de task; a semana mais cheia de cada um em relação à capacidade; quantas tasks mudaram de dono e quantas o piloto automático repassou sozinho; e o tempo médio até alguém aceitar uma task. No topo, "Para o próximo PS" lista conclusões montadas por regras a partir desses números (quem concentrou carga, subárea com uma pessoa só, quem não recebeu nada, o tipo de task que mais atrasou). O relatório pode ser copiado como texto ou impresso/salvo em PDF, para a passagem de gestão. Cálculo em `js/relatorio.js`, sem IA.
+
 ## Modo demonstração e modo equipe
 
 - **Demonstração** (o link puro do site): dados fictícios salvos no navegador de cada pessoa. Cada avaliador explora a sua cópia, e "Restaurar dados de demonstração" volta ao início. Nada sai para fora: o Discord e a planilha reais só recebem publicações do modo equipe (o servidor exige um código válido).
@@ -113,6 +117,7 @@ js/motor.js           motor de atribuição (pontuação, divisão, repasse)
 js/interpretador.js   leitura do pedido: IA com regras locais de reserva
 js/calendario.js      grade do mês e itens de cada dia
 js/planejador.js      planejamento em texto → cronograma + tasks distribuídas
+js/relatorio.js       números e conclusões do relatório do PS
 js/discord.js         mensagens para o Discord
 js/dados.js           estado, dados de demonstração e persistência
 js/datas.js           utilitários de data

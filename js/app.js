@@ -1,6 +1,7 @@
 // Interface do repasse: telas do gerente e do membro.
 
 import { carregar, salvar, restaurar, registrar, novoId, TIPOS_EVENTO, dadosDemonstracao, pilotoPadrao } from "./dados.js";
+import { gerarRelatorio, relatorioEmTexto, num, plural, dataBR } from "./relatorio.js";
 import { hojeISO, formatarCurto, prazoRelativo, diferencaDias, somarDias } from "./datas.js";
 import { proporDistribuicao, redistribuir, pontuar, cargaSemana, explicar } from "./motor.js";
 import { montarPlano, exemploPlanejamento, lerPlanejamento, tarefasDoEvento, resumoPlano } from "./planejador.js";
@@ -189,9 +190,13 @@ function render() {
   if (!ui.aba) ui.aba = p.papel === "gerente" ? "painel" : "minhas";
   const conteudo =
     p.papel === "gerente"
-      ? ({ painel: telaPainel, nova: telaNova, cronograma: telaCronograma, equipe: telaEquipe }[ui.aba] || telaPainel)()
+      ? ({ painel: telaPainel, nova: telaNova, cronograma: telaCronograma, equipe: telaEquipe, relatorio: telaRelatorio }[ui.aba] || telaPainel)()
       : ({ minhas: telaMinhas, calendario: telaCalendario }[ui.aba] || telaMinhas)();
   raiz.innerHTML = topo(p) + `<main>${conteudo}</main>` + previaDiscordHtml();
+  // No celular o menu rola de lado: mantém a aba atual à vista.
+  const ativa = raiz.querySelector(".aba.ativa");
+  const barra = ativa && ativa.parentElement;
+  if (barra && barra.scrollWidth > barra.clientWidth) barra.scrollLeft = ativa.offsetLeft - barra.offsetLeft - 16;
 }
 
 // Prévia da mensagem do Discord (demonstração): mostra exatamente o que iria para o canal dos aspirantes.
@@ -223,6 +228,7 @@ function topo(p) {
           ["nova", "Nova task"],
           ["cronograma", "Cronograma"],
           ["equipe", "Equipe"],
+          ["relatorio", "Relatório"],
         ]
       : [["minhas", "Minhas tasks", estado.tasks.filter((t) => t.responsavelId === p.id && t.status === "atribuida").length]];
   return `<header class="topo"><div class="topo-dentro">
@@ -556,6 +562,60 @@ function telaCriadas() {
 }
 
 // ---------- Gerente: equipe e tipos ----------
+// ---------- Gerente: relatório do PS ----------
+function telaRelatorio() {
+  const r = gerarRelatorio(estado, hoje);
+  const T = r.totais;
+  const periodo = r.periodo
+    ? `${dataBR(r.periodo.inicio)} a ${dataBR(r.periodo.fim)} · ${plural(r.periodo.semanas, "semana", "semanas")}${T.abertas ? ` · números até hoje, ${dataBR(hoje)}` : ""}`
+    : "Ainda não há tasks no PS.";
+  const maxH = Math.max(1, ...r.pessoas.map((p) => p.horas));
+  const barras = r.pessoas
+    .map((p) => `<div class="carga"><div class="carga-nome">${esc(p.nome)}<small>${esc(p.area)}</small></div>
+      <div class="barra ${p.semanasAcima ? "acima" : ""}"><i style="width:${(p.horas / maxH) * 100}%"></i></div><div class="carga-valor">${num(p.horas)}h</div></div>`)
+    .join("");
+  const linhaPessoa = (p) => `<tr><td>${esc(p.nome)}<br><small class="suave">${esc(p.area)}</small></td><td>${num(p.tasks)}</td><td>${num(p.horas)}h</td>
+    <td>${num(p.concluidas)}</td><td>${p.atrasadas ? `<span class="etiqueta atrasada">${num(p.atrasadas)}</span>` : "0"}</td><td>${num(p.recusou)}</td>
+    <td>${num(p.picoSemana)}h <small class="suave">de ${num(p.capacidade)}h</small>${p.semanasAcima ? ` <span class="etiqueta atrasada">acima</span>` : ""}</td></tr>`;
+  const linhaGrupo = (g, comPessoas) => `<tr><td>${esc(g.nome)}</td><td>${num(g.tasks)}</td><td>${num(g.horas)}h</td><td>${g.atrasadas ? `<span class="etiqueta atrasada">${num(g.atrasadas)}</span>` : "0"}</td>${comPessoas ? `<td>${g.nome === "Geral" ? "—" : num(g.pessoas)}</td>` : ""}</tr>`;
+  return `<div class="linha-titulo relatorio-cab"><div><h1>Relatório do PS</h1><p class="sub" style="margin:0">${periodo}</p></div>
+      <div class="acoes nao-imprimir"><button class="botao" data-acao="copiar-relatorio">Copiar como texto</button><button class="botao" data-acao="imprimir-relatorio">Imprimir ou salvar PDF</button></div></div>
+    <div class="kpis" style="margin-top:18px">
+      <div class="kpi"><b>${num(T.tasks)}</b><span>${plural(T.concluidas, "concluída", "concluídas")} · ${plural(T.atrasadas, "atrasada", "atrasadas")}</span></div>
+      <div class="kpi"><b>${num(T.horas)}h</b><span>de trabalho, entre ${plural(T.pessoas, "pessoa", "pessoas")}</span></div>
+      <div class="kpi"><b>${T.noPrazoPct == null ? "—" : `${T.noPrazoPct}%`}</b><span>das concluídas saíram no prazo</span></div>
+      <div class="kpi"><b>${num(T.tasksRepassadas)}</b><span>tasks mudaram de dono · ${num(T.repassesPiloto)} pelo piloto</span></div>
+    </div>
+    <div class="grade grade-3-1 bloco">
+      <div>
+        <div class="cartao bloco"><h2>Para o próximo PS</h2>
+          ${r.licoes.length ? `<ul class="licoes">${r.licoes.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : `<p class="vazio">Nada fora do esperado até agora.</p>`}
+          <p class="nota">Conclusões montadas por regras a partir dos números abaixo, não por IA.</p>
+        </div>
+        <div class="cartao bloco"><h2>Por pessoa</h2><div class="tabela-rolagem"><table>
+          <thead><tr><th>Pessoa</th><th>Tasks</th><th>Horas</th><th>Concluídas</th><th>Atrasadas</th><th>Repassou</th><th>Semana mais cheia</th></tr></thead>
+          <tbody>${r.pessoas.map(linhaPessoa).join("")}</tbody></table></div></div>
+        <div class="grade grade-2 bloco">
+          <div class="cartao"><h2>Por subárea</h2><div class="tabela-rolagem"><table>
+            <thead><tr><th>Subárea</th><th>Tasks</th><th>Horas</th><th>Atrasadas</th><th>Pessoas</th></tr></thead>
+            <tbody>${r.porArea.map((g) => linhaGrupo(g, true)).join("")}</tbody></table></div></div>
+          <div class="cartao"><h2>Por tipo de task</h2><div class="tabela-rolagem"><table>
+            <thead><tr><th>Tipo</th><th>Tasks</th><th>Horas</th><th>Atrasadas</th></tr></thead>
+            <tbody>${r.porTipo.map((g) => linhaGrupo(g, false)).join("")}</tbody></table></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="cartao bloco"><h2>Horas por pessoa</h2>${barras || `<p class="vazio">Sem tasks.</p>`}
+          <p class="nota">Barra em vermelho: passou da capacidade semanal em alguma semana.</p></div>
+        <div class="cartao bloco"><h2>Ritmo da equipe</h2>
+          <p class="relatorio-num"><b>${T.aceiteMedioDias == null ? "—" : plural(T.aceiteMedioDias, "dia", "dias")}</b><span>em média entre receber e aceitar uma task</span></p>
+          <p class="relatorio-num"><b>${num(T.acoesPiloto)}</b><span>ações do piloto automático (repasses, avisos, ajustes de prazo)</span></p>
+          <p class="relatorio-num"><b>${num(r.itensCronograma)}</b><span>itens no cronograma dos aspirantes</span></p>
+        </div>
+      </div>
+    </div>`;
+}
+
 function telaEquipe() {
   const linhas = estado.membros
     .filter((m) => m.papel === "membro")
@@ -1719,6 +1779,18 @@ const acoes = {
     ui.rodandoRotina = false;
     render();
   },
+  async "copiar-relatorio"() {
+    const texto = relatorioEmTexto(gerarRelatorio(estado, hoje));
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast("Relatório copiado. Cole no Discord da equipe ou no documento de passagem de gestão.");
+    } catch (e) {
+      toast("Não foi possível copiar automaticamente neste navegador.");
+    }
+  },
+  "imprimir-relatorio"() {
+    window.print();
+  },
   "fechar-previa"() {
     ui.previaDiscord = null;
     render();
@@ -1760,6 +1832,7 @@ const acoes = {
   aceitar(el) {
     const t = estado.tasks.find((x) => x.id === el.dataset.id);
     t.status = "em_andamento";
+    t.aceitaEm = hoje;
     t.historico.push({ em: new Date().toISOString(), texto: `${primeiroNome(t.responsavelId)} aceitou.` });
     registrar(estado, `${primeiroNome(t.responsavelId)} aceitou "${t.titulo}".`);
     persistir();
@@ -1769,6 +1842,7 @@ const acoes = {
     const t = estado.tasks.find((x) => x.id === el.dataset.id);
     t.status = "concluida";
     t.concluidaEm = hoje;
+    if (!t.aceitaEm) t.aceitaEm = hoje;
     registrar(estado, `${primeiroNome(t.responsavelId)} concluiu "${t.titulo}".`);
     persistir();
     render();
